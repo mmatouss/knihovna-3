@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - feature/isbn-librarian-app-8018023184276178042
   workflow_dispatch:
 
 permissions:
