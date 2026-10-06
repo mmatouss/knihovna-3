@@ -16,14 +16,14 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
   onUpdate,
   onDelete,
 }) => {
-  if (!book) return null;
-
   const [isEditing, setIsEditing] = useState(false);
-  const [title, setTitle] = useState(book.title);
-  const [authorsStr, setAuthorsStr] = useState(book.authors.join(', '));
-  const [publisher, setPublisher] = useState(book.publisher || '');
-  const [publishedDate, setPublishedDate] = useState(book.publishedDate || '');
-  const [notes, setNotes] = useState(book.notes || '');
+  const [title, setTitle] = useState(book?.title ?? '');
+  const [authorsStr, setAuthorsStr] = useState(book?.authors.join(', ') ?? '');
+  const [publisher, setPublisher] = useState(book?.publisher || '');
+  const [publishedDate, setPublishedDate] = useState(book?.publishedDate || '');
+  const [notes, setNotes] = useState(book?.notes || '');
+
+  if (!book) return null;
 
   const handleSave = () => {
     const updated: Book = {
