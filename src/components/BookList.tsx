@@ -65,11 +65,11 @@ export const BookList: React.FC<BookListProps> = ({
                 <button
                   type="button"
                   onClick={() => exportBooksToCsv(books)}
-                  className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 rounded-xl text-xs font-medium flex items-center space-x-1.5 transition-colors"
-                  title="Exportovat do CSV (Excel)"
+                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white dark:bg-indigo-600 dark:hover:bg-indigo-500 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-colors shadow-xs"
+                  title="Exportovat seznam do CSV (Excel)"
                 >
                   <Download className="w-4 h-4" />
-                  <span className="hidden sm:inline">Export CSV</span>
+                  <span>Export CSV</span>
                 </button>
 
                 <button

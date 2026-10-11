@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
-import { Camera, SwitchCamera, AlertTriangle, RefreshCw, Sparkles } from 'lucide-react';
+import { Camera, SwitchCamera, AlertTriangle, RefreshCw, Sparkles, Zap, ZapOff } from 'lucide-react';
 import { normalizeIsbn } from '../utils/isbn';
 
 interface BarcodeScannerProps {
@@ -15,6 +15,8 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState<boolean>(true);
   const [scannedFeedback, setScannedFeedback] = useState<string | null>(null);
+  const [isTorchSupported, setIsTorchSupported] = useState<boolean>(false);
+  const [isTorchOn, setIsTorchOn] = useState<boolean>(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -113,7 +115,19 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
       config,
       handleSuccess,
       () => { /* scan error per frame, can ignore */ }
-    ).catch((err) => {
+    ).then(() => {
+      setIsTorchOn(false);
+      try {
+        const capabilities = html5QrcodeScanner.getRunningTrackCapabilities();
+        if ('torch' in capabilities) {
+          setIsTorchSupported(Boolean(capabilities.torch));
+        } else {
+          setIsTorchSupported(true);
+        }
+      } catch {
+        setIsTorchSupported(true);
+      }
+    }).catch((err) => {
       console.error('Error starting scanner', err);
       setErrorMsg('Nepodařilo se spustit kameru. Vyberte jinou kameru nebo zkontrolujte oprávnění.');
     });
@@ -123,8 +137,40 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
         scannerRef.current.stop().catch(() => {});
         scannerRef.current = null;
       }
+      setIsTorchSupported(false);
+      setIsTorchOn(false);
     };
   }, [selectedCameraId, isScanningActive, onScanSuccess]);
+
+  const toggleTorch = async () => {
+    if (!scannerRef.current) return;
+    const nextTorchState = !isTorchOn;
+    try {
+      await scannerRef.current.applyVideoConstraints({
+        advanced: [{ torch: nextTorchState } as unknown as MediaTrackConstraintSet],
+      });
+      setIsTorchOn(nextTorchState);
+    } catch (err) {
+      console.error('Failed to toggle torch via applyVideoConstraints', err);
+      // Fallback: try applying constraints on the video track directly if available
+      try {
+        const settings = scannerRef.current.getRunningTrackSettings();
+        if (settings) {
+          // Attempting native track constraints
+          const stream = document.querySelector<HTMLVideoElement>('#isbn-qr-reader video')?.srcObject as MediaStream | null;
+          const track = stream?.getVideoTracks()[0];
+          if (track && 'applyConstraints' in track) {
+            await track.applyConstraints({
+              advanced: [{ torch: nextTorchState } as unknown as MediaTrackConstraintSet],
+            });
+            setIsTorchOn(nextTorchState);
+          }
+        }
+      } catch (fallbackErr) {
+        console.error('Failed fallback torch toggle', fallbackErr);
+      }
+    }
+  };
 
   const switchCamera = () => {
     if (cameras.length <= 1) return;
@@ -202,26 +248,54 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
 
       {/* Control bar */}
       <div className="p-4 bg-slate-900 flex items-center justify-between border-t border-slate-800">
-        <div className="flex items-center space-x-2 text-xs text-slate-400">
-          <Camera className="w-4 h-4 text-indigo-400" />
-          <span>
+        <div className="flex items-center space-x-2 text-xs text-slate-400 min-w-0 pr-2">
+          <Camera className="w-4 h-4 text-indigo-400 flex-shrink-0" />
+          <span className="truncate">
             {cameras.length > 0
               ? (cameras.find(c => c.id === selectedCameraId)?.label || 'Kamera aktivní')
               : 'Vyhledávání kamer...'}
           </span>
         </div>
 
-        {cameras.length > 1 && (
-          <button
-            type="button"
-            onClick={switchCamera}
-            className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl flex items-center space-x-1 text-xs font-medium transition-colors"
-            title="Přepnout kameru"
-          >
-            <SwitchCamera className="w-4 h-4" />
-            <span>Přepnout</span>
-          </button>
-        )}
+        <div className="flex items-center space-x-2 flex-shrink-0">
+          {/* Torch / Flashlight toggle button */}
+          {isScanningActive && (isTorchSupported || cameras.length > 0) && (
+            <button
+              type="button"
+              onClick={toggleTorch}
+              className={`p-2 rounded-xl flex items-center space-x-1.5 text-xs font-medium transition-all ${
+                isTorchOn
+                  ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/20'
+                  : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
+              }`}
+              title={isTorchOn ? 'Vypnout svítilnu' : 'Zapnout svítilnu pro slabé osvětlení'}
+            >
+              {isTorchOn ? (
+                <>
+                  <Zap className="w-4 h-4 fill-current text-slate-950" />
+                  <span>Svítilna zapnuta</span>
+                </>
+              ) : (
+                <>
+                  <ZapOff className="w-4 h-4 text-slate-300" />
+                  <span>Svítilna</span>
+                </>
+              )}
+            </button>
+          )}
+
+          {cameras.length > 1 && (
+            <button
+              type="button"
+              onClick={switchCamera}
+              className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl flex items-center space-x-1 text-xs font-medium transition-colors"
+              title="Přepnout kameru"
+            >
+              <SwitchCamera className="w-4 h-4" />
+              <span className="hidden sm:inline">Přepnout</span>
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
