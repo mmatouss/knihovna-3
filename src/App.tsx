@@ -6,11 +6,12 @@ import { BarcodeScanner } from './components/BarcodeScanner';
 import { ManualIsbnInput } from './components/ManualIsbnInput';
 import { BookList } from './components/BookList';
 import { BookDetailModal } from './components/BookDetailModal';
+import { RecentScansList } from './components/RecentScansList';
 import { Camera, Keyboard, Library, CheckCircle2, AlertCircle, BookOpen, Sparkles } from 'lucide-react';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<ScanMode>('camera');
-  const { books, addBook, updateBook, deleteBook, clearAllBooks } = useBookStorage();
+  const { books, scanHistory, addBook, updateBook, deleteBook, clearAllBooks, clearScanHistory } = useBookStorage();
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'warning' | 'error'; message: string } | null>(null);
@@ -35,7 +36,7 @@ export function App() {
           showToast('warning', `Kniha s ISBN ${isbn} ("${result.book.title}") už v knihovně je.`);
           setSelectedBook(result.book);
         } else {
-          showToast('success', `Přidáno: "${fetchedBook.title}"`);
+          showToast('success', `Přidáno a uloženo: "${fetchedBook.title}"`);
         }
       } catch (err) {
         console.error(err);
@@ -61,7 +62,7 @@ export function App() {
                 Knihovník <span className="text-indigo-600 dark:text-indigo-400">ISBN</span>
               </h1>
               <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400 mt-0.5">
-                Mobilní skener čárových kódů & katalog
+                Mobilní skener čárových kódů & automatický ukládací katalog
               </p>
             </div>
           </div>
@@ -138,7 +139,7 @@ export function App() {
         </div>
 
         {/* Active Tab View Body */}
-        <div className="mt-2">
+        <div className="mt-2 space-y-4">
           {activeTab === 'camera' && (
             <div className="space-y-4">
               <div className="text-center space-y-1">
@@ -147,7 +148,7 @@ export function App() {
                   <span>Naskenujte čárový kód na knize</span>
                 </h2>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Přiblížte kód v bílém rámečku knížky k fotoaparátu.
+                  Kniha se po naskenování automaticky uloží do paměti aplikace.
                 </p>
               </div>
 
@@ -162,14 +163,30 @@ export function App() {
                   <span>Vyhledávám informace o knize v databázi...</span>
                 </div>
               )}
+
+              <RecentScansList
+                scanHistory={scanHistory}
+                books={books}
+                onSelectBook={(book) => setSelectedBook(book)}
+                onClearHistory={clearScanHistory}
+                onViewAll={() => setActiveTab('list')}
+              />
             </div>
           )}
 
           {activeTab === 'manual' && (
-            <div className="py-2">
+            <div className="py-2 space-y-4">
               <ManualIsbnInput
                 onSearch={handleIsbnDetected}
                 isLoading={isLoading}
+              />
+
+              <RecentScansList
+                scanHistory={scanHistory}
+                books={books}
+                onSelectBook={(book) => setSelectedBook(book)}
+                onClearHistory={clearScanHistory}
+                onViewAll={() => setActiveTab('list')}
               />
             </div>
           )}
