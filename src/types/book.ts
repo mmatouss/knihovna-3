@@ -13,4 +13,14 @@ export interface Book {
   notes?: string;
 }
 
+export interface ScanRecord {
+  id: string;
+  isbn: string;
+  scannedAt: string;
+  status: 'added' | 'duplicate' | 'error';
+  bookTitle?: string;
+  bookId?: string;
+  bookCoverUrl?: string;
+}
+
 export type ScanMode = 'camera' | 'manual' | 'list';
