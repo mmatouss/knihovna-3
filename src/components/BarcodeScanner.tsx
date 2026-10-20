@@ -10,6 +10,9 @@ interface BarcodeScannerProps {
 
 export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, isScanningActive }) => {
   const scannerRef = useRef<Html5Qrcode | null>(null);
+  const onScanSuccessRef = useRef(onScanSuccess);
+  const lastScannedRef = useRef<{ code: string; time: number } | null>(null);
+
   const [cameras, setCameras] = useState<Array<{ id: string; label: string }>>([]);
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -17,6 +20,11 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
   const [scannedFeedback, setScannedFeedback] = useState<string | null>(null);
   const [isTorchSupported, setIsTorchSupported] = useState<boolean>(false);
   const [isTorchOn, setIsTorchOn] = useState<boolean>(false);
+
+  // Keep latest onScanSuccess ref without causing scanner restart
+  useEffect(() => {
+    onScanSuccessRef.current = onScanSuccess;
+  }, [onScanSuccess]);
 
   useEffect(() => {
     let isMounted = true;
@@ -98,16 +106,31 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
 
     const handleSuccess = (decodedText: string) => {
       const clean = normalizeIsbn(decodedText);
-      if (clean) {
-        // Haptic feedback if available
-        if (navigator.vibrate) {
-          try { navigator.vibrate(100); } catch { /* ignore */ }
-        }
-        setScannedFeedback(clean);
-        setTimeout(() => setScannedFeedback(null), 1500);
+      if (!clean) return;
 
-        onScanSuccess(clean);
+      // Only process valid ISBN lengths (10 or 13 digits)
+      if (clean.length !== 10 && clean.length !== 13) return;
+
+      // Prevent continuous duplicate triggers within a 2.5s window
+      const now = Date.now();
+      if (
+        lastScannedRef.current &&
+        lastScannedRef.current.code === clean &&
+        now - lastScannedRef.current.time < 2500
+      ) {
+        return;
       }
+
+      lastScannedRef.current = { code: clean, time: now };
+
+      // Haptic feedback if available
+      if (navigator.vibrate) {
+        try { navigator.vibrate(100); } catch { /* ignore */ }
+      }
+      setScannedFeedback(clean);
+      setTimeout(() => setScannedFeedback(null), 1500);
+
+      onScanSuccessRef.current(clean);
     };
 
     html5QrcodeScanner.start(
@@ -140,7 +163,7 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
       setIsTorchSupported(false);
       setIsTorchOn(false);
     };
-  }, [selectedCameraId, isScanningActive, onScanSuccess]);
+  }, [selectedCameraId, isScanningActive]);
 
   const toggleTorch = async () => {
     if (!scannerRef.current) return;
