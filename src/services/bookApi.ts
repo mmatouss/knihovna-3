@@ -29,21 +29,60 @@ export async function fetchBookByIsbn(isbn: string): Promise<Book> {
   const openLibCoverUrl = `https://covers.openlibrary.org/b/isbn/${cleanIsbn}-M.jpg`;
   const isCzech = isCzechIsbn(cleanIsbn);
 
-  // 1. For Czech ISBNs (or as primary attempt), try fetching from Obálky knih via CORS proxies
+  // Fetch concurrently from Obálky knih, Google Books, and Open Library
+  const [obalkyRes, googleRes, openLibRes] = await Promise.allSettled([
+    fetchFromObalkyKnih(cleanIsbn),
+    fetchFromGoogleBooks(cleanIsbn, isCzech, obalkyCoverUrl, openLibCoverUrl),
+    fetchFromOpenLibrary(cleanIsbn, isCzech, obalkyCoverUrl, openLibCoverUrl),
+  ]);
+
+  const obalkyBook = obalkyRes.status === 'fulfilled' ? obalkyRes.value : null;
+  const googleBook = googleRes.status === 'fulfilled' ? googleRes.value : null;
+  const openLibBook = openLibRes.status === 'fulfilled' ? openLibRes.value : null;
+
+  // Order of preference
   if (isCzech) {
-    const obalkyBook = await fetchFromObalkyKnih(cleanIsbn);
-    if (obalkyBook) {
-      return obalkyBook;
-    }
+    if (obalkyBook) return obalkyBook;
+    if (googleBook) return googleBook;
+    if (openLibBook) return openLibBook;
+  } else {
+    if (googleBook) return googleBook;
+    if (openLibBook) return openLibBook;
+    if (obalkyBook) return obalkyBook;
   }
 
-  // 2. Try Google Books API
+  // 4. Fallback: Create placeholder book for manual metadata entry by librarian
+  return {
+    id: cleanIsbn + '-' + Date.now(),
+    isbn: cleanIsbn,
+    title: `Kniha s ISBN ${cleanIsbn}`,
+    authors: ['Neznámý autor'],
+    publisher: '',
+    publishedDate: '',
+    description: 'Informace o této knize nebyly nalezeny v databázích. Můžete je upravit ručně.',
+    coverUrl: isCzech ? obalkyCoverUrl : openLibCoverUrl,
+    addedAt: new Date().toISOString(),
+  };
+}
+
+async function fetchFromGoogleBooks(
+  cleanIsbn: string,
+  isCzech: boolean,
+  obalkyCoverUrl: string,
+  openLibCoverUrl: string
+): Promise<Book | null> {
   try {
-    const googleRes = await fetch(
-      `https://www.googleapis.com/books/v1/volumes?q=isbn:${cleanIsbn}`
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2500);
+
+    const res = await fetch(
+      `https://www.googleapis.com/books/v1/volumes?q=isbn:${cleanIsbn}`,
+      { signal: controller.signal }
     );
-    if (googleRes.ok) {
-      const data = await googleRes.json();
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      const data = await res.json();
       if (data.totalItems > 0 && data.items && data.items.length > 0) {
         const item = data.items[0].volumeInfo;
         const coverUrl = isCzech
@@ -66,16 +105,29 @@ export async function fetchBookByIsbn(isbn: string): Promise<Book> {
       }
     }
   } catch (err) {
-    console.warn('Google Books API error, trying fallback:', err);
+    console.warn('Google Books API warning:', err);
   }
+  return null;
+}
 
-  // 3. Try Open Library API Fallback
+async function fetchFromOpenLibrary(
+  cleanIsbn: string,
+  isCzech: boolean,
+  obalkyCoverUrl: string,
+  openLibCoverUrl: string
+): Promise<Book | null> {
   try {
-    const openLibRes = await fetch(
-      `https://openlibrary.org/api/books?bibkeys=ISBN:${cleanIsbn}&format=json&jscmd=data`
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2500);
+
+    const res = await fetch(
+      `https://openlibrary.org/api/books?bibkeys=ISBN:${cleanIsbn}&format=json&jscmd=data`,
+      { signal: controller.signal }
     );
-    if (openLibRes.ok) {
-      const data = await openLibRes.json();
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      const data = await res.json();
       const key = `ISBN:${cleanIsbn}`;
       if (data[key]) {
         const item = data[key];
@@ -99,29 +151,9 @@ export async function fetchBookByIsbn(isbn: string): Promise<Book> {
       }
     }
   } catch (err) {
-    console.warn('Open Library API error:', err);
+    console.warn('Open Library API warning:', err);
   }
-
-  // If non-Czech ISBN was not found above, also try Obálky knih as final data attempt
-  if (!isCzech) {
-    const obalkyBook = await fetchFromObalkyKnih(cleanIsbn);
-    if (obalkyBook) {
-      return obalkyBook;
-    }
-  }
-
-  // 4. Fallback: Create placeholder book for manual metadata entry by librarian
-  return {
-    id: cleanIsbn + '-' + Date.now(),
-    isbn: cleanIsbn,
-    title: `Kniha s ISBN ${cleanIsbn}`,
-    authors: ['Neznámý autor'],
-    publisher: '',
-    publishedDate: '',
-    description: 'Informace o této knize nebyly nalezeny v databázích. Můžete je upravit ručně.',
-    coverUrl: isCzech ? obalkyCoverUrl : openLibCoverUrl,
-    addedAt: new Date().toISOString(),
-  };
+  return null;
 }
 
 /**
@@ -137,7 +169,7 @@ async function fetchFromObalkyKnih(isbn: string): Promise<Book | null> {
   for (const endpoint of proxyEndpoints) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const timeoutId = setTimeout(() => controller.abort(), 1800);
       const res = await fetch(endpoint, { signal: controller.signal });
       clearTimeout(timeoutId);
 
