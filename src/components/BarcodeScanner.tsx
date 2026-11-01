@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
-import { Camera, SwitchCamera, AlertTriangle, RefreshCw, Sparkles, Zap, ZapOff } from 'lucide-react';
+import { Camera, SwitchCamera, AlertTriangle, RefreshCw, Zap, ZapOff } from 'lucide-react';
 import { normalizeIsbn } from '../utils/isbn';
 
 interface BarcodeScannerProps {
@@ -88,10 +88,7 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
       formatsToSupport: [
         Html5QrcodeSupportedFormats.EAN_13,
         Html5QrcodeSupportedFormats.EAN_8,
-        Html5QrcodeSupportedFormats.CODE_128,
-        Html5QrcodeSupportedFormats.CODE_39,
         Html5QrcodeSupportedFormats.UPC_A,
-        Html5QrcodeSupportedFormats.UPC_E,
       ],
       verbose: false,
     });
@@ -100,8 +97,12 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
 
     const config = {
       fps: 10,
-      qrbox: { width: 280, height: 160 },
-      aspectRatio: 1.0,
+      qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
+        const width = Math.floor(viewfinderWidth * 0.8);
+        const height = Math.min(Math.floor(width / 3), viewfinderHeight);
+        return { width, height };
+      },
+      aspectRatio: 0.75, // 3:4 portrait
     };
 
     const handleSuccess = (decodedText: string) => {
@@ -205,38 +206,63 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
   return (
     <div className="w-full max-w-md mx-auto bg-slate-900 rounded-3xl overflow-hidden shadow-lg border border-slate-800 text-white relative">
       {/* Viewport container */}
-      <div className="relative aspect-square w-full bg-slate-950 flex items-center justify-center overflow-hidden">
+      <div className="relative aspect-[3/4] w-full bg-slate-950 flex items-center justify-center overflow-hidden">
         <div id="isbn-qr-reader" className="w-full h-full object-cover"></div>
 
         {/* Visual Overlay for scanning line & target */}
         {isScanningActive && !errorMsg && !isInitializing && (
           <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center">
-            {/* Target Box */}
-            <div className="w-64 h-36 border-2 border-indigo-400 rounded-2xl relative shadow-[0_0_0_9999px_rgba(0,0,0,0.5)] flex items-center justify-center">
+            {/* Target Box (80% width, ~3:1 aspect ratio) */}
+            <div
+              className={`w-[80%] aspect-[3/1] border-2 rounded-2xl relative shadow-[0_0_0_9999px_rgba(0,0,0,0.65)] flex items-center justify-center overflow-hidden transition-all duration-300 ${
+                scannedFeedback
+                  ? 'border-emerald-400 shadow-[0_0_0_9999px_rgba(0,0,0,0.65),0_0_24px_rgba(52,211,153,0.6)] bg-emerald-950/30'
+                  : 'border-white/80'
+              }`}
+            >
               {/* Corner indicators */}
-              <div className="absolute -top-1 -left-1 w-4 h-4 border-t-4 border-l-4 border-indigo-500 rounded-tl-lg"></div>
-              <div className="absolute -top-1 -right-1 w-4 h-4 border-t-4 border-r-4 border-indigo-500 rounded-tr-lg"></div>
-              <div className="absolute -bottom-1 -left-1 w-4 h-4 border-b-4 border-l-4 border-indigo-500 rounded-bl-lg"></div>
-              <div className="absolute -bottom-1 -right-1 w-4 h-4 border-b-4 border-r-4 border-indigo-500 rounded-br-lg"></div>
+              <div
+                className={`absolute -top-1 -left-1 w-4 h-4 border-t-4 border-l-4 rounded-tl-lg transition-colors ${
+                  scannedFeedback ? 'border-emerald-400' : 'border-red-500'
+                }`}
+              />
+              <div
+                className={`absolute -top-1 -right-1 w-4 h-4 border-t-4 border-r-4 rounded-tr-lg transition-colors ${
+                  scannedFeedback ? 'border-emerald-400' : 'border-red-500'
+                }`}
+              />
+              <div
+                className={`absolute -bottom-1 -left-1 w-4 h-4 border-b-4 border-l-4 rounded-bl-lg transition-colors ${
+                  scannedFeedback ? 'border-emerald-400' : 'border-red-500'
+                }`}
+              />
+              <div
+                className={`absolute -bottom-1 -right-1 w-4 h-4 border-b-4 border-r-4 rounded-br-lg transition-colors ${
+                  scannedFeedback ? 'border-emerald-400' : 'border-red-500'
+                }`}
+              />
 
-              {/* Animated scanning line */}
-              <div className="w-full h-0.5 bg-gradient-to-r from-transparent via-indigo-400 to-transparent animate-pulse shadow-[0_0_8px_#818cf8]"></div>
+              {/* Animated red laser line or Scanned ISBN Feedback */}
+              {scannedFeedback ? (
+                <div className="flex flex-col items-center justify-center px-2 py-1 bg-black/40 rounded-lg">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-400">
+                    Naskenováno
+                  </span>
+                  <span className="font-mono text-sm sm:text-base font-bold text-white tracking-widest">
+                    {scannedFeedback}
+                  </span>
+                </div>
+              ) : (
+                <div className="absolute inset-x-0 h-0.5 bg-gradient-to-r from-transparent via-red-500 to-transparent shadow-[0_0_12px_#ef4444] animate-laser" />
+              )}
             </div>
 
-            <p className="mt-4 text-xs font-medium text-slate-300 bg-black/60 px-3 py-1 rounded-full backdrop-blur-sm">
-              Namiřte na čárový kód knížky
+            <p className="mt-4 text-xs font-medium text-slate-200 bg-black/70 px-4 py-1.5 rounded-full backdrop-blur-md text-center shadow-md">
+              Namiřte čárový kód ISBN do rámečku
             </p>
           </div>
         )}
 
-        {/* Feedback popup on detection */}
-        {scannedFeedback && (
-          <div className="absolute inset-0 bg-emerald-950/80 backdrop-blur-sm flex flex-col items-center justify-center text-emerald-300 animate-in fade-in duration-200">
-            <Sparkles className="w-12 h-12 mb-2 animate-bounce" />
-            <p className="font-semibold text-lg text-white">Čárový kód detekován!</p>
-            <p className="font-mono text-sm text-emerald-300 mt-1">{scannedFeedback}</p>
-          </div>
-        )}
 
         {/* Initializing loader */}
         {isInitializing && (

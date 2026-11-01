@@ -5,3 +5,34 @@
     @apply bg-slate-50 text-slate-900 min-h-screen font-sans antialiased selection:bg-indigo-500 selection:text-white;
   }
 }
+
+/* Hide default html5-qrcode shading element and borders */
+#isbn-qr-reader #qr-shaded-region,
+#isbn-qr-reader [id*="qr-shaded-region"] {
+  display: none !important;
+}
+
+#isbn-qr-reader video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+}
+
+@keyframes laser-sweep {
+  0% {
+    top: 5%;
+    opacity: 0.7;
+  }
+  50% {
+    top: 90%;
+    opacity: 1;
+  }
+  100% {
+    top: 5%;
+    opacity: 0.7;
+  }
+}
+
+.animate-laser {
+  animation: laser-sweep 2s ease-in-out infinite;
+}
