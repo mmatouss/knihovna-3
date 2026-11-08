@@ -1,8 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { BrowserMultiFormatReader } from '@zxing/browser';
 import { BarcodeFormat, DecodeHintType } from '@zxing/library';
-import { Camera, SwitchCamera, AlertTriangle, RefreshCw, Zap, ZapOff } from 'lucide-react';
+import { Camera, SwitchCamera, AlertTriangle, RefreshCw, Zap, ZapOff, ScanText } from 'lucide-react';
 import { normalizeIsbn } from '../utils/isbn';
+import { preloadIsbnOcr, readIsbnFromImage } from '../services/isbnOcr';
 
 interface BarcodeScannerProps {
   onScanSuccess: (decodedText: string) => void;
@@ -32,7 +33,13 @@ function createReader() {
  * Vyřízne z aktuálního snímku videa oblast kolem rámečku v PLNÉM rozlišení kamery
  * (ne zmenšenou na velikost obrazovky), aby šel přečíst i menší čárový kód.
  */
-function captureScanRegion(video: HTMLVideoElement, canvas: HTMLCanvasElement): boolean {
+function captureScanRegion(
+  video: HTMLVideoElement,
+  canvas: HTMLCanvasElement,
+  widthFraction = SCAN_REGION_WIDTH,
+  heightFraction = SCAN_REGION_HEIGHT,
+  maxWidth = MAX_SCAN_WIDTH
+): boolean {
   const vw = video.videoWidth;
   const vh = video.videoHeight;
   const cw = video.clientWidth;
@@ -47,12 +54,12 @@ function captureScanRegion(video: HTMLVideoElement, canvas: HTMLCanvasElement): 
   const visibleY = (vh - visibleH) / 2;
 
   // Oblast skenování je vycentrovaná stejně jako nakreslený rámeček.
-  const regionW = Math.min(visibleW * SCAN_REGION_WIDTH, vw);
-  const regionH = Math.min(visibleW * SCAN_REGION_HEIGHT, visibleH);
+  const regionW = Math.min(visibleW * widthFraction, vw);
+  const regionH = Math.min(visibleW * heightFraction, visibleH);
   const sx = Math.max(0, visibleX + (visibleW - regionW) / 2);
   const sy = Math.max(0, visibleY + (visibleH - regionH) / 2);
 
-  const outScale = Math.min(1, MAX_SCAN_WIDTH / regionW);
+  const outScale = Math.min(1, maxWidth / regionW);
   const outW = Math.round(regionW * outScale);
   const outH = Math.round(regionH * outScale);
   if (canvas.width !== outW) canvas.width = outW;
@@ -80,11 +87,42 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
   const [scannedFeedback, setScannedFeedback] = useState<string | null>(null);
   const [isTorchSupported, setIsTorchSupported] = useState<boolean>(false);
   const [isTorchOn, setIsTorchOn] = useState<boolean>(false);
+  const [isReadingText, setIsReadingText] = useState<boolean>(false);
+  const [textReadError, setTextReadError] = useState<string | null>(null);
 
   // Keep latest onScanSuccess ref without causing scanner restart
   useEffect(() => {
     onScanSuccessRef.current = onScanSuccess;
   }, [onScanSuccess]);
+
+  const handleSuccess = useCallback((decodedText: string) => {
+    const clean = normalizeIsbn(decodedText);
+    if (!clean) return;
+
+    // Only process valid ISBN lengths (10 or 13 digits)
+    if (clean.length !== 10 && clean.length !== 13) return;
+
+    // Prevent continuous duplicate triggers within a 2.5s window
+    const now = Date.now();
+    if (
+      lastScannedRef.current &&
+      lastScannedRef.current.code === clean &&
+      now - lastScannedRef.current.time < 2500
+    ) {
+      return;
+    }
+
+    lastScannedRef.current = { code: clean, time: now };
+
+    // Haptic feedback if available
+    if (navigator.vibrate) {
+      try { navigator.vibrate(100); } catch { /* ignore */ }
+    }
+    setScannedFeedback(clean);
+    setTimeout(() => setScannedFeedback(null), 1500);
+
+    onScanSuccessRef.current(clean);
+  }, []);
 
   useEffect(() => {
     if (!isScanningActive) return;
@@ -94,35 +132,6 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
     const reader = createReader();
     const canvas = document.createElement('canvas');
     const videoEl = videoRef.current;
-
-    const handleSuccess = (decodedText: string) => {
-      const clean = normalizeIsbn(decodedText);
-      if (!clean) return;
-
-      // Only process valid ISBN lengths (10 or 13 digits)
-      if (clean.length !== 10 && clean.length !== 13) return;
-
-      // Prevent continuous duplicate triggers within a 2.5s window
-      const now = Date.now();
-      if (
-        lastScannedRef.current &&
-        lastScannedRef.current.code === clean &&
-        now - lastScannedRef.current.time < 2500
-      ) {
-        return;
-      }
-
-      lastScannedRef.current = { code: clean, time: now };
-
-      // Haptic feedback if available
-      if (navigator.vibrate) {
-        try { navigator.vibrate(100); } catch { /* ignore */ }
-      }
-      setScannedFeedback(clean);
-      setTimeout(() => setScannedFeedback(null), 1500);
-
-      onScanSuccessRef.current(clean);
-    };
 
     const scanLoop = () => {
       if (cancelled) return;
@@ -233,7 +242,46 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
       setIsTorchSupported(false);
       setIsTorchOn(false);
     };
-  }, [selectedCameraId, isScanningActive, retryCounter]);
+  }, [selectedCameraId, isScanningActive, retryCounter, handleSuccess]);
+
+  /**
+   * Přečte vytištěné číslo ISBN (bez čárového kódu) z aktuálního snímku kamery.
+   * Nejdřív zkusí oblast kolem rámečku, pak celý viditelný obraz.
+   */
+  const readPrintedIsbn = async () => {
+    const video = videoRef.current;
+    if (!video || isReadingText) return;
+    setIsReadingText(true);
+    setTextReadError(null);
+
+    try {
+      const attempts: Array<[number, number]> = [
+        [SCAN_REGION_WIDTH, SCAN_REGION_HEIGHT], // oblast kolem rámečku
+        [1, 10], // celý viditelný obraz (výška se omezí na viditelnou část)
+      ];
+      for (const [w, h] of attempts) {
+        const canvas = document.createElement('canvas');
+        if (!captureScanRegion(video, canvas, w, h, 4000)) continue;
+        const isbn = await readIsbnFromImage(canvas, canvas.width, canvas.height);
+        if (isbn) {
+          handleSuccess(isbn);
+          return;
+        }
+      }
+      setTextReadError('Číslo ISBN se nepodařilo přečíst. Dejte ho do rámečku, přibližte a zkuste znovu.');
+    } catch (err) {
+      console.error('OCR failed', err);
+      setTextReadError('Čtení textu selhalo. Zkontrolujte připojení k internetu a zkuste znovu.');
+    } finally {
+      setIsReadingText(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!textReadError) return;
+    const t = setTimeout(() => setTextReadError(null), 4000);
+    return () => clearTimeout(t);
+  }, [textReadError]);
 
   const toggleTorch = async () => {
     const track = streamRef.current?.getVideoTracks()[0];
@@ -303,7 +351,12 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
               />
 
               {/* Animated red laser line or Scanned ISBN Feedback */}
-              {scannedFeedback ? (
+              {isReadingText && !scannedFeedback ? (
+                <div className="flex items-center space-x-2 px-3 py-1.5 bg-black/60 rounded-lg">
+                  <RefreshCw className="w-4 h-4 animate-spin text-indigo-300" />
+                  <span className="text-xs font-semibold text-white">Čtu číslo ISBN…</span>
+                </div>
+              ) : scannedFeedback ? (
                 <div className="flex flex-col items-center justify-center px-2 py-1 bg-black/40 rounded-lg">
                   <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-400">
                     Naskenováno
@@ -317,9 +370,15 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
               )}
             </div>
 
-            <p className="mt-4 text-xs font-medium text-slate-200 bg-black/70 px-4 py-1.5 rounded-full backdrop-blur-md text-center shadow-md">
-              Namiřte čárový kód ISBN do rámečku
-            </p>
+            {textReadError ? (
+              <p className="mt-4 mx-4 text-xs font-medium text-amber-100 bg-amber-900/90 px-4 py-1.5 rounded-2xl text-center shadow-md">
+                {textReadError}
+              </p>
+            ) : (
+              <p className="mt-4 text-xs font-medium text-slate-200 bg-black/70 px-4 py-1.5 rounded-full backdrop-blur-md text-center shadow-md">
+                Namiřte čárový kód nebo číslo ISBN do rámečku
+              </p>
+            )}
           </div>
         )}
 
@@ -351,8 +410,32 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
         )}
       </div>
 
+      {/* Čtení vytištěného čísla (bez čárového kódu) */}
+      {isScanningActive && !errorMsg && !isInitializing && (
+        <div className="px-4 pt-4 bg-slate-900">
+          <button
+            type="button"
+            onClick={readPrintedIsbn}
+            onPointerEnter={preloadIsbnOcr}
+            onTouchStart={preloadIsbnOcr}
+            disabled={isReadingText}
+            className="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-900 disabled:text-indigo-300 text-white text-sm font-semibold rounded-xl flex items-center justify-center space-x-2 transition-all active:scale-[0.99]"
+          >
+            {isReadingText ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <ScanText className="w-4 h-4" />
+            )}
+            <span>{isReadingText ? 'Čtu číslo…' : 'Přečíst vytištěné číslo ISBN'}</span>
+          </button>
+          <p className="mt-1.5 text-[10px] text-slate-400 text-center">
+            Pro knihy bez čárového kódu – stačí mít číslo ISBN v rámečku.
+          </p>
+        </div>
+      )}
+
       {/* Control bar */}
-      <div className="p-4 bg-slate-900 flex items-center justify-between border-t border-slate-800">
+      <div className="p-4 bg-slate-900 flex items-center justify-between">
         <div className="flex items-center space-x-2 text-xs text-slate-400 min-w-0 pr-2">
           <Camera className="w-4 h-4 text-indigo-400 flex-shrink-0" />
           <span className="truncate">
