@@ -92,6 +92,11 @@ export function useBookStorage() {
     setBooks((prev) => prev.filter((b) => b.id !== id));
   };
 
+  /** Vrátí smazanou knihu zpět (tlačítko „Vrátit“ po smazání). */
+  const restoreBook = (book: Book) => {
+    setBooks((prev) => (prev.some((b) => b.id === book.id) ? prev : [book, ...prev]));
+  };
+
   const clearAllBooks = () => {
     if (window.confirm('Opravdu chcete smazat celý seznam knih? Tato akce je nevratná.')) {
       setBooks([]);
@@ -113,6 +118,7 @@ export function useBookStorage() {
     addBook,
     updateBook,
     deleteBook,
+    restoreBook,
     clearAllBooks,
     recordScan,
     clearScanHistory,

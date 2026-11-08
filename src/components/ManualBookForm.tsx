@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { BookPlus, ChevronDown, ChevronUp, AlertCircle, Save } from 'lucide-react';
 import type { Book } from '../types/book';
+import { normalizeText } from '../utils/bookMatching';
 
 interface ManualBookFormProps {
   /** Knihy v knihovně – kvůli upozornění na možný duplikát. */
@@ -9,16 +10,6 @@ interface ManualBookFormProps {
   onAdd: (book: Book) => void;
   /** Otevře existující knihu (z upozornění na duplikát). */
   onSelectBook: (book: Book) => void;
-}
-
-/** Porovnání názvů bez ohledu na velikost písmen, diakritiku a mezery. */
-function normalizeText(text: string): string {
-  return text
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
 }
 
 /** Vytvoří záznam knihy bez ISBN (jedinečné id a datum přidání). */
