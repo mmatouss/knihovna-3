@@ -7,6 +7,7 @@ import { ManualIsbnInput } from './components/ManualIsbnInput';
 import { BookList } from './components/BookList';
 import { BookDetailModal } from './components/BookDetailModal';
 import { RecentScansList } from './components/RecentScansList';
+import { ManualBookForm } from './components/ManualBookForm';
 import { Camera, Keyboard, Library, CheckCircle2, AlertCircle, BookOpen, Sparkles } from 'lucide-react';
 
 export function App() {
@@ -21,6 +22,12 @@ export function App() {
   const openBook = (book: Book, edit = false) => {
     setEditOnOpen(edit);
     setSelectedBook(book);
+  };
+
+  // Ruční zápis knihy bez ISBN.
+  const handleManualBookAdd = (book: Book) => {
+    addBook(book);
+    showToast('success', `Kniha bez ISBN uložena: "${book.title}"`);
   };
 
   const goToManualEntry = (value?: string, note?: string) => {
@@ -202,6 +209,12 @@ export function App() {
                 isLoading={isLoading}
                 initialValue={manualPrefill.value}
                 initialNote={manualPrefill.note}
+              />
+
+              <ManualBookForm
+                books={books}
+                onAdd={handleManualBookAdd}
+                onSelectBook={(book) => openBook(book)}
               />
 
               <RecentScansList

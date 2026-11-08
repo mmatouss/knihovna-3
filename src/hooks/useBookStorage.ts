@@ -66,7 +66,10 @@ export function useBookStorage() {
 
   const addBook = (newBook: Book): { success: boolean; isDuplicate: boolean; book: Book } => {
     const cleanNewIsbn = normalizeIsbn(newBook.isbn);
-    const existingIndex = books.findIndex(b => normalizeIsbn(b.isbn) === cleanNewIsbn);
+    // Kniha bez ISBN: duplikát podle ISBN poznat nejde (může jít i o další výtisk).
+    const existingIndex = cleanNewIsbn
+      ? books.findIndex(b => normalizeIsbn(b.isbn) === cleanNewIsbn)
+      : -1;
 
     if (existingIndex >= 0) {
       const existingBook = books[existingIndex];
@@ -101,7 +104,7 @@ export function useBookStorage() {
 
   const hasBookWithIsbn = (isbn: string): boolean => {
     const clean = normalizeIsbn(isbn);
-    return books.some((b) => normalizeIsbn(b.isbn) === clean);
+    return clean !== '' && books.some((b) => normalizeIsbn(b.isbn) === clean);
   };
 
   return {

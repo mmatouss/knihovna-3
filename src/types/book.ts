@@ -1,5 +1,6 @@
 export interface Book {
   id: string;
+  /** ISBN bez pomlček; prázdný řetězec = kniha nemá ISBN (zapsaná ručně). */
   isbn: string;
   title: string;
   authors: string[];

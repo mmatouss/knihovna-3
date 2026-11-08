@@ -103,7 +103,7 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
                   </p>
                   <div className="inline-flex items-center space-x-1 bg-slate-100 dark:bg-slate-700 px-2.5 py-1 rounded-lg text-xs font-mono text-slate-700 dark:text-slate-300">
                     <Hash className="w-3.5 h-3.5 text-slate-400" />
-                    <span>{formatIsbn(book.isbn)}</span>
+                    <span>{book.isbn ? formatIsbn(book.isbn) : 'Bez ISBN'}</span>
                   </div>
                 </>
               ) : (
@@ -154,6 +154,12 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
                   <span>Rok / Datum vydání: <strong className="text-slate-800 dark:text-slate-100">{book.publishedDate}</strong></span>
                 </div>
               )}
+              {book.pageCount ? (
+                <div className="flex items-center text-slate-600 dark:text-slate-300">
+                  <FileText className="w-4 h-4 mr-2 text-slate-400 flex-shrink-0" />
+                  <span>Počet stran: <strong className="text-slate-800 dark:text-slate-100">{book.pageCount}</strong></span>
+                </div>
+              ) : null}
               {book.description && (
                 <div className="bg-slate-50 dark:bg-slate-700/40 p-3 rounded-xl border border-slate-100 dark:border-slate-700/50">
                   <p className="text-slate-600 dark:text-slate-300 line-clamp-4">{book.description}</p>
