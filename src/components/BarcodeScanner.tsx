@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
+import { BrowserMultiFormatReader } from '@zxing/browser';
+import { BarcodeFormat, DecodeHintType } from '@zxing/library';
 import { Camera, SwitchCamera, AlertTriangle, RefreshCw, Zap, ZapOff } from 'lucide-react';
 import { normalizeIsbn } from '../utils/isbn';
 
@@ -8,15 +9,74 @@ interface BarcodeScannerProps {
   isScanningActive: boolean;
 }
 
+// Kolikrát za sekundu zkoušíme přečíst čárový kód.
+const SCAN_INTERVAL_MS = 120;
+
+// Oblast, ve které hledáme čárový kód (vůči šířce náhledu kamery).
+// Je o něco větší než nakreslený rámeček, aby kód nemusel být přesně uvnitř.
+const SCAN_REGION_WIDTH = 0.95;
+const SCAN_REGION_HEIGHT = 0.6;
+
+// Max. šířka výřezu v pixelech – větší obraz by zbytečně zpomaloval dekódování.
+const MAX_SCAN_WIDTH = 1280;
+
+function createReader() {
+  const hints = new Map<DecodeHintType, unknown>();
+  // ISBN je vždy čárový kód EAN-13 (začíná 978 nebo 979).
+  hints.set(DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.EAN_13]);
+  hints.set(DecodeHintType.TRY_HARDER, true);
+  return new BrowserMultiFormatReader(hints);
+}
+
+/**
+ * Vyřízne z aktuálního snímku videa oblast kolem rámečku v PLNÉM rozlišení kamery
+ * (ne zmenšenou na velikost obrazovky), aby šel přečíst i menší čárový kód.
+ */
+function captureScanRegion(video: HTMLVideoElement, canvas: HTMLCanvasElement): boolean {
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  const cw = video.clientWidth;
+  const ch = video.clientHeight;
+  if (!vw || !vh || !cw || !ch) return false;
+
+  // Video je zobrazeno s object-fit: cover – spočítáme, jaká část snímku je vidět.
+  const scale = Math.max(cw / vw, ch / vh);
+  const visibleW = cw / scale;
+  const visibleH = ch / scale;
+  const visibleX = (vw - visibleW) / 2;
+  const visibleY = (vh - visibleH) / 2;
+
+  // Oblast skenování je vycentrovaná stejně jako nakreslený rámeček.
+  const regionW = Math.min(visibleW * SCAN_REGION_WIDTH, vw);
+  const regionH = Math.min(visibleW * SCAN_REGION_HEIGHT, visibleH);
+  const sx = Math.max(0, visibleX + (visibleW - regionW) / 2);
+  const sy = Math.max(0, visibleY + (visibleH - regionH) / 2);
+
+  const outScale = Math.min(1, MAX_SCAN_WIDTH / regionW);
+  const outW = Math.round(regionW * outScale);
+  const outH = Math.round(regionH * outScale);
+  if (canvas.width !== outW) canvas.width = outW;
+  if (canvas.height !== outH) canvas.height = outH;
+
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return false;
+  ctx.drawImage(video, sx, sy, regionW, regionH, 0, 0, outW, outH);
+  return true;
+}
+
 export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, isScanningActive }) => {
-  const scannerRef = useRef<Html5Qrcode | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const onScanSuccessRef = useRef(onScanSuccess);
   const lastScannedRef = useRef<{ code: string; time: number } | null>(null);
 
   const [cameras, setCameras] = useState<Array<{ id: string; label: string }>>([]);
+  // Prázdný řetězec = výchozí zadní kamera (facingMode: environment).
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
+  const [activeCameraLabel, setActiveCameraLabel] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState<boolean>(true);
+  const [retryCounter, setRetryCounter] = useState<number>(0);
   const [scannedFeedback, setScannedFeedback] = useState<string | null>(null);
   const [isTorchSupported, setIsTorchSupported] = useState<boolean>(false);
   const [isTorchOn, setIsTorchOn] = useState<boolean>(false);
@@ -27,83 +87,13 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
   }, [onScanSuccess]);
 
   useEffect(() => {
-    let isMounted = true;
+    if (!isScanningActive) return;
 
-    async function initScanner() {
-      setIsInitializing(true);
-      setErrorMsg(null);
-
-      try {
-        const devices = await Html5Qrcode.getCameras();
-        if (!isMounted) return;
-
-        if (devices && devices.length > 0) {
-          setCameras(devices);
-          // Prefer back camera if available
-          const backCamera = devices.find(d =>
-            d.label.toLowerCase().includes('back') ||
-            d.label.toLowerCase().includes('rear') ||
-            d.label.toLowerCase().includes('zadní') ||
-            d.label.toLowerCase().includes('environment')
-          );
-          setSelectedCameraId(backCamera ? backCamera.id : devices[0].id);
-        } else {
-          setErrorMsg('Nebyly nalezeny žádné kamery na tomto zařízení.');
-        }
-      } catch (err: unknown) {
-        if (!isMounted) return;
-        const msg = err instanceof Error ? err.message : String(err);
-        if (msg.includes('NotAllowedError') || msg.includes('Permission denied')) {
-          setErrorMsg('Přístup ke kameře byl zamítnut. Povolte prosím přístup ke kameře v nastavení prohlížeče.');
-        } else {
-          setErrorMsg('Chyba při inicializaci kamery. Zkontrolujte, zda kamera není používána jinou aplikací.');
-        }
-      } finally {
-        if (isMounted) setIsInitializing(false);
-      }
-    }
-
-    initScanner();
-
-    return () => {
-      isMounted = false;
-      if (scannerRef.current) {
-        scannerRef.current.stop().catch(() => {});
-        scannerRef.current = null;
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!selectedCameraId || !isScanningActive) {
-      if (scannerRef.current) {
-        scannerRef.current.stop().catch(() => {});
-        scannerRef.current = null;
-      }
-      return;
-    }
-
-    const scannerId = 'isbn-qr-reader';
-    const html5QrcodeScanner = new Html5Qrcode(scannerId, {
-      formatsToSupport: [
-        Html5QrcodeSupportedFormats.EAN_13,
-        Html5QrcodeSupportedFormats.EAN_8,
-        Html5QrcodeSupportedFormats.UPC_A,
-      ],
-      verbose: false,
-    });
-
-    scannerRef.current = html5QrcodeScanner;
-
-    const config = {
-      fps: 10,
-      qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-        const width = Math.floor(viewfinderWidth * 0.8);
-        const height = Math.min(Math.floor(width / 3), viewfinderHeight);
-        return { width, height };
-      },
-      aspectRatio: 0.75, // 3:4 portrait
-    };
+    let cancelled = false;
+    let scanTimer: ReturnType<typeof setTimeout> | null = null;
+    const reader = createReader();
+    const canvas = document.createElement('canvas');
+    const videoEl = videoRef.current;
 
     const handleSuccess = (decodedText: string) => {
       const clean = normalizeIsbn(decodedText);
@@ -134,71 +124,135 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
       onScanSuccessRef.current(clean);
     };
 
-    html5QrcodeScanner.start(
-      selectedCameraId,
-      config,
-      handleSuccess,
-      () => { /* scan error per frame, can ignore */ }
-    ).then(() => {
-      setIsTorchOn(false);
-      try {
-        const capabilities = html5QrcodeScanner.getRunningTrackCapabilities();
-        if ('torch' in capabilities) {
-          setIsTorchSupported(Boolean(capabilities.torch));
-        } else {
-          setIsTorchSupported(true);
+    const scanLoop = () => {
+      if (cancelled) return;
+      const video = videoEl;
+      if (video && video.readyState >= video.HAVE_CURRENT_DATA && captureScanRegion(video, canvas)) {
+        try {
+          const result = reader.decodeFromCanvas(canvas);
+          handleSuccess(result.getText());
+        } catch {
+          // V tomto snímku nebyl kód nalezen – zkusíme další.
         }
-      } catch {
-        setIsTorchSupported(true);
       }
-    }).catch((err) => {
-      console.error('Error starting scanner', err);
-      setErrorMsg('Nepodařilo se spustit kameru. Vyberte jinou kameru nebo zkontrolujte oprávnění.');
-    });
+      scanTimer = setTimeout(scanLoop, SCAN_INTERVAL_MS);
+    };
+
+    async function start() {
+      setIsInitializing(true);
+      setErrorMsg(null);
+
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setErrorMsg('Tento prohlížeč nepodporuje kameru. Stránka musí běžet přes HTTPS.');
+        setIsInitializing(false);
+        return;
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: {
+            ...(selectedCameraId
+              ? { deviceId: { exact: selectedCameraId } }
+              : { facingMode: { ideal: 'environment' } }),
+            // Vyšší rozlišení = čitelnější čárový kód i z větší vzdálenosti.
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
+        });
+
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        streamRef.current = stream;
+
+        const track = stream.getVideoTracks()[0];
+        setActiveCameraLabel(track?.label || '');
+
+        // Průběžné ostření, pokud ho kamera podporuje (hlavně Android).
+        try {
+          await track?.applyConstraints({
+            advanced: [{ focusMode: 'continuous' } as unknown as MediaTrackConstraintSet],
+          });
+        } catch { /* nepodporováno */ }
+
+        try {
+          const capabilities = (track?.getCapabilities?.() ?? {}) as Record<string, unknown>;
+          setIsTorchSupported(Boolean(capabilities.torch));
+        } catch {
+          setIsTorchSupported(false);
+        }
+        setIsTorchOn(false);
+
+        const video = videoEl;
+        if (video) {
+          video.srcObject = stream;
+          await video.play().catch(() => {});
+        }
+
+        // Seznam kamer (popisky jsou dostupné až po udělení oprávnění).
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          if (!cancelled) {
+            setCameras(
+              devices
+                .filter((d) => d.kind === 'videoinput')
+                .map((d, i) => ({ id: d.deviceId, label: d.label || `Kamera ${i + 1}` }))
+            );
+          }
+        } catch { /* ignore */ }
+
+        if (!cancelled) {
+          setIsInitializing(false);
+          scanLoop();
+        }
+      } catch (err: unknown) {
+        if (cancelled) return;
+        console.error('Error starting camera', err);
+        const name = err instanceof Error ? err.name : '';
+        if (name === 'NotAllowedError' || name === 'SecurityError') {
+          setErrorMsg('Přístup ke kameře byl zamítnut. Povolte prosím přístup ke kameře v nastavení prohlížeče.');
+        } else if (name === 'NotFoundError' || name === 'OverconstrainedError') {
+          setErrorMsg('Nebyla nalezena žádná použitelná kamera na tomto zařízení.');
+        } else {
+          setErrorMsg('Chyba při spuštění kamery. Zkontrolujte, zda kamera není používána jinou aplikací.');
+        }
+        setIsInitializing(false);
+      }
+    }
+
+    start();
 
     return () => {
-      if (scannerRef.current) {
-        scannerRef.current.stop().catch(() => {});
-        scannerRef.current = null;
-      }
+      cancelled = true;
+      if (scanTimer) clearTimeout(scanTimer);
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+      if (videoEl) videoEl.srcObject = null;
       setIsTorchSupported(false);
       setIsTorchOn(false);
     };
-  }, [selectedCameraId, isScanningActive]);
+  }, [selectedCameraId, isScanningActive, retryCounter]);
 
   const toggleTorch = async () => {
-    if (!scannerRef.current) return;
+    const track = streamRef.current?.getVideoTracks()[0];
+    if (!track) return;
     const nextTorchState = !isTorchOn;
     try {
-      await scannerRef.current.applyVideoConstraints({
+      await track.applyConstraints({
         advanced: [{ torch: nextTorchState } as unknown as MediaTrackConstraintSet],
       });
       setIsTorchOn(nextTorchState);
     } catch (err) {
-      console.error('Failed to toggle torch via applyVideoConstraints', err);
-      // Fallback: try applying constraints on the video track directly if available
-      try {
-        const settings = scannerRef.current.getRunningTrackSettings();
-        if (settings) {
-          // Attempting native track constraints
-          const stream = document.querySelector<HTMLVideoElement>('#isbn-qr-reader video')?.srcObject as MediaStream | null;
-          const track = stream?.getVideoTracks()[0];
-          if (track && 'applyConstraints' in track) {
-            await track.applyConstraints({
-              advanced: [{ torch: nextTorchState } as unknown as MediaTrackConstraintSet],
-            });
-            setIsTorchOn(nextTorchState);
-          }
-        }
-      } catch (fallbackErr) {
-        console.error('Failed fallback torch toggle', fallbackErr);
-      }
+      console.error('Failed to toggle torch', err);
     }
   };
 
   const switchCamera = () => {
     if (cameras.length <= 1) return;
-    const currentIndex = cameras.findIndex(c => c.id === selectedCameraId);
+    const currentId = selectedCameraId || streamRef.current?.getVideoTracks()[0]?.getSettings().deviceId || '';
+    const currentIndex = cameras.findIndex(c => c.id === currentId);
     const nextIndex = (currentIndex + 1) % cameras.length;
     setSelectedCameraId(cameras[nextIndex].id);
   };
@@ -207,7 +261,13 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
     <div className="w-full max-w-md mx-auto bg-slate-900 rounded-3xl overflow-hidden shadow-lg border border-slate-800 text-white relative">
       {/* Viewport container */}
       <div className="relative aspect-[3/4] w-full bg-slate-950 flex items-center justify-center overflow-hidden">
-        <div id="isbn-qr-reader" className="w-full h-full object-cover"></div>
+        <video
+          ref={videoRef}
+          className="absolute inset-0 w-full h-full object-cover"
+          autoPlay
+          muted
+          playsInline
+        />
 
         {/* Visual Overlay for scanning line & target */}
         {isScanningActive && !errorMsg && !isInitializing && (
@@ -265,7 +325,7 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
 
 
         {/* Initializing loader */}
-        {isInitializing && (
+        {isInitializing && !errorMsg && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900 text-slate-400">
             <RefreshCw className="w-8 h-8 animate-spin mb-2 text-indigo-400" />
             <p className="text-sm">Načítám kameru...</p>
@@ -280,12 +340,8 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
             <p className="text-xs text-slate-300 mb-4">{errorMsg}</p>
             <button
               onClick={() => {
-                setIsInitializing(true);
-                setErrorMsg(null);
-                Html5Qrcode.getCameras().then(devices => {
-                  if (devices.length > 0) setSelectedCameraId(devices[0].id);
-                  setIsInitializing(false);
-                }).catch(() => setIsInitializing(false));
+                setSelectedCameraId('');
+                setRetryCounter((n) => n + 1);
               }}
               className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-medium transition-colors"
             >
@@ -300,15 +356,13 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
         <div className="flex items-center space-x-2 text-xs text-slate-400 min-w-0 pr-2">
           <Camera className="w-4 h-4 text-indigo-400 flex-shrink-0" />
           <span className="truncate">
-            {cameras.length > 0
-              ? (cameras.find(c => c.id === selectedCameraId)?.label || 'Kamera aktivní')
-              : 'Vyhledávání kamer...'}
+            {activeCameraLabel || (isInitializing ? 'Vyhledávání kamer...' : 'Kamera aktivní')}
           </span>
         </div>
 
         <div className="flex items-center space-x-2 flex-shrink-0">
           {/* Torch / Flashlight toggle button */}
-          {isScanningActive && (isTorchSupported || cameras.length > 0) && (
+          {isScanningActive && isTorchSupported && (
             <button
               type="button"
               onClick={toggleTorch}
