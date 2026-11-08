@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { Search, AlertCircle, CheckCircle2, HelpCircle, BookOpen } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { Search, AlertCircle, CheckCircle2, HelpCircle, BookOpen, ImagePlus } from 'lucide-react';
 import { isValidIsbn, normalizeIsbn, formatIsbn } from '../utils/isbn';
+import { preloadIsbnOcr, readIsbnFromFile } from '../services/isbnOcr';
 
 interface ManualIsbnInputProps {
   onSearch: (isbn: string) => void;
@@ -10,6 +11,9 @@ interface ManualIsbnInputProps {
 export const ManualIsbnInput: React.FC<ManualIsbnInputProps> = ({ onSearch, isLoading }) => {
   const [inputVal, setInputVal] = useState('');
   const [showTips, setShowTips] = useState(false);
+  const [isReadingPhoto, setIsReadingPhoto] = useState(false);
+  const [photoMessage, setPhotoMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const cleanVal = normalizeIsbn(inputVal);
   const isValid = cleanVal.length > 0 && isValidIsbn(cleanVal);
@@ -19,6 +23,34 @@ export const ManualIsbnInput: React.FC<ManualIsbnInputProps> = ({ onSearch, isLo
     e.preventDefault();
     if (cleanVal) {
       onSearch(cleanVal);
+    }
+  };
+
+  // Přečte vytištěné ISBN z fotky (tiráž, zadní strana obálky…) a rovnou knihu vyhledá.
+  const handlePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    setIsReadingPhoto(true);
+    setPhotoMessage(null);
+    try {
+      const isbn = await readIsbnFromFile(file);
+      if (isbn) {
+        setInputVal(isbn);
+        setPhotoMessage({ ok: true, text: `Na fotce nalezeno ISBN ${formatIsbn(isbn)}.` });
+        onSearch(isbn);
+      } else {
+        setPhotoMessage({
+          ok: false,
+          text: 'Na fotce se nepodařilo najít platné ISBN. Zkuste ostřejší fotku zblízka, nebo číslo opište.',
+        });
+      }
+    } catch (err) {
+      console.error('OCR failed', err);
+      setPhotoMessage({ ok: false, text: 'Čtení fotky selhalo. Zkontrolujte připojení k internetu.' });
+    } finally {
+      setIsReadingPhoto(false);
     }
   };
 
@@ -103,6 +135,41 @@ export const ManualIsbnInput: React.FC<ManualIsbnInputProps> = ({ onSearch, isLo
           )}
         </button>
       </form>
+
+      <div className="pt-1 border-t border-slate-200 dark:border-slate-700">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={handlePhoto}
+          data-testid="isbn-photo-input"
+        />
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          onPointerEnter={preloadIsbnOcr}
+          disabled={isReadingPhoto || isLoading}
+          className="mt-3 w-full py-3 px-4 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 disabled:opacity-60 text-slate-800 dark:text-slate-100 font-medium rounded-xl flex items-center justify-center space-x-2 transition-all text-sm"
+        >
+          {isReadingPhoto ? (
+            <div className="w-5 h-5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+          ) : (
+            <ImagePlus className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+          )}
+          <span>{isReadingPhoto ? 'Čtu číslo z fotky…' : 'Vyfotit nebo nahrát fotku s ISBN'}</span>
+        </button>
+        {photoMessage && (
+          <p
+            className={`mt-2 text-xs px-1 ${
+              photoMessage.ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'
+            }`}
+          >
+            {photoMessage.text}
+          </p>
+        )}
+      </div>
     </div>
   );
 };
