@@ -31,6 +31,17 @@ async function getWorker(): Promise<Worker> {
   return workerPromise;
 }
 
+/** Výsledek čtení: platné ISBN, nebo aspoň „odhad“ k ruční opravě. */
+export interface IsbnReadResult {
+  /** Platné ISBN (kontrolní číslice sedí). */
+  isbn: string | null;
+  /**
+   * Číslo, které vypadá jako ISBN, ale kontrolní číslice nesedí
+   * (např. jedna číslice je zakrytá skvrnou). Předvyplní se do ručního zadání.
+   */
+  guess: string | null;
+}
+
 /** Stáhne Tesseract dopředu, aby první čtení netrvalo tak dlouho. */
 export function preloadIsbnOcr(): void {
   getWorker().catch(() => {});
@@ -56,16 +67,36 @@ export function extractIsbnFromText(text: string): string | null {
     }
   }
 
-  for (const digits of digitRuns) {
-    for (let i = 0; i + 10 <= digits.length; i++) {
-      const candidate = digits.slice(i, i + 10);
-      if (/^\d{9}[\dX]$/.test(candidate) && isValidIsbn(candidate)) {
-        return candidate;
-      }
+  // ISBN-10 bereme jen jako samostatné 10místné číslo (celý úsek, nebo jeho
+  // část oddělenou mezerou). Výřez z delšího čísla by mohl náhodou „sedět“ –
+  // např. z neplatného ISBN-13 by vzniklo falešné ISBN-10.
+  const tenDigitCandidates = runs.flatMap((run) => [
+    run.replace(/[^0-9X]/g, ''),
+    ...run.split(/ +/).map((part) => part.replace(/[^0-9X]/g, '')),
+  ]);
+  for (const candidate of tenDigitCandidates) {
+    if (/^\d{9}[\dX]$/.test(candidate) && isValidIsbn(candidate)) {
+      return candidate;
     }
   }
 
   return null;
+}
+
+/**
+ * Najde číslo, které vypadá jako ISBN, i když kontrolní číslice nesedí.
+ * Používá se jako předvyplněná hodnota pro ruční opravu.
+ */
+export function guessIsbnFromText(text: string): string | null {
+  const upper = text.toUpperCase().replace(/[–—]/g, '-');
+  const runs = (upper.match(/[0-9X](?:[ -]{0,2}[0-9X]){8,20}/g) ?? []).map((run) =>
+    run.replace(/[^0-9X]/g, '')
+  );
+  for (const digits of runs) {
+    const start = digits.search(/97[89]/);
+    if (start >= 0 && digits.length - start >= 13) return digits.slice(start, start + 13);
+  }
+  return runs.find((d) => d.length === 13 || d.length === 10) ?? null;
 }
 
 /**
@@ -107,20 +138,21 @@ function prepareCanvas(source: CanvasImageSource, width: number, height: number)
   return canvas;
 }
 
-/** Přečte ISBN z obrázku (snímek z kamery, fotka…). Vrátí null, když ho nenajde. */
+/** Přečte ISBN z obrázku (snímek z kamery, fotka…). */
 export async function readIsbnFromImage(
   source: CanvasImageSource,
   width: number,
   height: number
-): Promise<string | null> {
+): Promise<IsbnReadResult> {
   const worker = await getWorker();
   const canvas = prepareCanvas(source, width, height);
   const { data } = await worker.recognize(canvas);
-  return extractIsbnFromText(data.text);
+  const isbn = extractIsbnFromText(data.text);
+  return { isbn, guess: isbn ? null : guessIsbnFromText(data.text) };
 }
 
 /** Přečte ISBN z nahraného souboru s fotkou. */
-export async function readIsbnFromFile(file: File): Promise<string | null> {
+export async function readIsbnFromFile(file: File): Promise<IsbnReadResult> {
   const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
   try {
     return await readIsbnFromImage(bitmap, bitmap.width, bitmap.height);

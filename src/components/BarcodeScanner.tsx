@@ -1,13 +1,18 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { BrowserMultiFormatReader } from '@zxing/browser';
 import { BarcodeFormat, DecodeHintType } from '@zxing/library';
-import { Camera, SwitchCamera, AlertTriangle, RefreshCw, Zap, ZapOff, ScanText } from 'lucide-react';
+import { Camera, SwitchCamera, AlertTriangle, RefreshCw, Zap, ZapOff, ScanText, Keyboard } from 'lucide-react';
 import { normalizeIsbn } from '../utils/isbn';
 import { preloadIsbnOcr, readIsbnFromImage } from '../services/isbnOcr';
 
 interface BarcodeScannerProps {
   onScanSuccess: (decodedText: string) => void;
   isScanningActive: boolean;
+  /**
+   * Přepne na ruční zadání ISBN (když čtení nejde, např. kvůli skvrně).
+   * `prefill` je částečně přečtené číslo, které stačí opravit.
+   */
+  onManualEntry?: (prefill?: string, note?: string) => void;
 }
 
 // Kolikrát za sekundu zkoušíme přečíst čárový kód.
@@ -71,7 +76,7 @@ function captureScanRegion(
   return true;
 }
 
-export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, isScanningActive }) => {
+export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, isScanningActive, onManualEntry }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const onScanSuccessRef = useRef(onScanSuccess);
@@ -89,6 +94,8 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
   const [isTorchOn, setIsTorchOn] = useState<boolean>(false);
   const [isReadingText, setIsReadingText] = useState<boolean>(false);
   const [textReadError, setTextReadError] = useState<string | null>(null);
+  // Částečně přečtené číslo z posledního neúspěšného čtení (k ruční opravě).
+  const [textReadGuess, setTextReadGuess] = useState<string | null>(null);
 
   // Keep latest onScanSuccess ref without causing scanner restart
   useEffect(() => {
@@ -253,22 +260,30 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
     if (!video || isReadingText) return;
     setIsReadingText(true);
     setTextReadError(null);
+    setTextReadGuess(null);
 
     try {
       const attempts: Array<[number, number]> = [
         [SCAN_REGION_WIDTH, SCAN_REGION_HEIGHT], // oblast kolem rámečku
         [1, 10], // celý viditelný obraz (výška se omezí na viditelnou část)
       ];
+      let guess: string | null = null;
       for (const [w, h] of attempts) {
         const canvas = document.createElement('canvas');
         if (!captureScanRegion(video, canvas, w, h, 4000)) continue;
-        const isbn = await readIsbnFromImage(canvas, canvas.width, canvas.height);
-        if (isbn) {
-          handleSuccess(isbn);
+        const result = await readIsbnFromImage(canvas, canvas.width, canvas.height);
+        if (result.isbn) {
+          handleSuccess(result.isbn);
           return;
         }
+        guess = guess ?? result.guess;
       }
-      setTextReadError('Číslo ISBN se nepodařilo přečíst. Dejte ho do rámečku, přibližte a zkuste znovu.');
+      setTextReadGuess(guess);
+      setTextReadError(
+        guess
+          ? `Přečteno ${guess}, ale číslo nesedí (asi skvrna nebo odlesk). Zkuste znovu, nebo ho opravte ručně.`
+          : 'Číslo ISBN se nepodařilo přečíst. Dejte ho do rámečku, přibližte a zkuste znovu.'
+      );
     } catch (err) {
       console.error('OCR failed', err);
       setTextReadError('Čtení textu selhalo. Zkontrolujte připojení k internetu a zkuste znovu.');
@@ -279,7 +294,7 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
 
   useEffect(() => {
     if (!textReadError) return;
-    const t = setTimeout(() => setTextReadError(null), 4000);
+    const t = setTimeout(() => setTextReadError(null), 6000);
     return () => clearTimeout(t);
   }, [textReadError]);
 
@@ -371,11 +386,11 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
             </div>
 
             {textReadError ? (
-              <p className="mt-4 mx-4 text-xs font-medium text-amber-100 bg-amber-900/90 px-4 py-1.5 rounded-2xl text-center shadow-md">
+              <p className="relative mt-4 mx-4 text-xs font-medium text-amber-100 bg-amber-900/90 px-4 py-1.5 rounded-2xl text-center shadow-md">
                 {textReadError}
               </p>
             ) : (
-              <p className="mt-4 text-xs font-medium text-slate-200 bg-black/70 px-4 py-1.5 rounded-full backdrop-blur-md text-center shadow-md">
+              <p className="relative mt-4 text-xs font-medium text-slate-200 bg-black/70 px-4 py-1.5 rounded-full backdrop-blur-md text-center shadow-md">
                 Namiřte čárový kód nebo číslo ISBN do rámečku
               </p>
             )}
@@ -431,6 +446,29 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
           <p className="mt-1.5 text-[10px] text-slate-400 text-center">
             Pro knihy bez čárového kódu – stačí mít číslo ISBN v rámečku.
           </p>
+          {onManualEntry && (
+            <button
+              type="button"
+              onClick={() =>
+                onManualEntry(
+                  textReadGuess ?? undefined,
+                  textReadGuess
+                    ? `Skener přečetl ${textReadGuess}, ale kontrolní číslice nesedí. Porovnejte číslo s knihou a opravte ho.`
+                    : 'Čárový kód ani číslo se nepodařilo načíst. Opište ISBN z knihy.'
+                )
+              }
+              className={`mt-3 w-full py-2 px-4 rounded-xl text-xs font-semibold flex items-center justify-center space-x-2 transition-all ${
+                textReadGuess
+                  ? 'bg-amber-500 hover:bg-amber-600 text-slate-950'
+                  : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
+              }`}
+            >
+              <Keyboard className="w-4 h-4" />
+              <span>
+                {textReadGuess ? `Opravit ručně: ${textReadGuess}` : 'Nejde to načíst? Zadat ISBN ručně'}
+              </span>
+            </button>
+          )}
         </div>
       )}
 

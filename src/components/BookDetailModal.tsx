@@ -8,6 +8,8 @@ interface BookDetailModalProps {
   onClose: () => void;
   onUpdate: (updated: Book) => void;
   onDelete: (id: string) => void;
+  /** Otevřít rovnou v režimu úprav (např. když se údaje o knize nenašly). */
+  startEditing?: boolean;
 }
 
 export const BookDetailModal: React.FC<BookDetailModalProps> = ({
@@ -15,10 +17,14 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
   onClose,
   onUpdate,
   onDelete,
+  startEditing = false,
 }) => {
-  const [isEditing, setIsEditing] = useState(false);
-  const [title, setTitle] = useState(book?.title ?? '');
-  const [authorsStr, setAuthorsStr] = useState(book?.authors.join(', ') ?? '');
+  // Pozn.: komponenta se pro každou knihu vytváří znovu (viz `key` v App.tsx),
+  // takže se pole vždy předvyplní údaji právě otevřené knihy.
+  const missing = Boolean(book?.metadataMissing);
+  const [isEditing, setIsEditing] = useState(startEditing);
+  const [title, setTitle] = useState(missing ? '' : (book?.title ?? ''));
+  const [authorsStr, setAuthorsStr] = useState(missing ? '' : (book?.authors.join(', ') ?? ''));
   const [publisher, setPublisher] = useState(book?.publisher || '');
   const [publishedDate, setPublishedDate] = useState(book?.publishedDate || '');
   const [notes, setNotes] = useState(book?.notes || '');
@@ -33,6 +39,9 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
       publisher: publisher.trim(),
       publishedDate: publishedDate.trim(),
       notes: notes.trim(),
+      // Odstraníme automatický text „Informace nebyly nalezeny…“.
+      description: book.metadataMissing ? '' : book.description,
+      metadataMissing: false,
     };
     onUpdate(updated);
     setIsEditing(false);
@@ -99,10 +108,17 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
                 </>
               ) : (
                 <div className="space-y-3">
+                  {book.metadataMissing && (
+                    <p className="text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-lg p-2">
+                      Údaje o knize se nepodařilo najít. Doplňte prosím název a autora.
+                    </p>
+                  )}
                   <div>
                     <label className="block text-xs text-slate-500 mb-1">Název knihy</label>
                     <input
                       type="text"
+                      autoFocus={book.metadataMissing}
+                      placeholder="Např. Babička"
                       value={title}
                       onChange={(e) => setTitle(e.target.value)}
                       className="w-full text-sm font-semibold p-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
@@ -112,6 +128,7 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
                     <label className="block text-xs text-slate-500 mb-1">Autoři (oddělení čárkou)</label>
                     <input
                       type="text"
+                      placeholder="Např. Božena Němcová"
                       value={authorsStr}
                       onChange={(e) => setAuthorsStr(e.target.value)}
                       className="w-full text-xs font-medium p-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-900 dark:text-white"

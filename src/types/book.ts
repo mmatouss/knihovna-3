@@ -11,6 +11,8 @@ export interface Book {
   categories?: string[];
   addedAt: string;
   notes?: string;
+  /** Údaje o knize se nepodařilo najít v databázích – je potřeba je doplnit ručně. */
+  metadataMissing?: boolean;
 }
 
 export interface ScanRecord {
