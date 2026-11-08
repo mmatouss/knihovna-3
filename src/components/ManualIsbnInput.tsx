@@ -6,24 +6,51 @@ import { preloadIsbnOcr, readIsbnFromFile } from '../services/isbnOcr';
 interface ManualIsbnInputProps {
   onSearch: (isbn: string) => void;
   isLoading: boolean;
+  /** Předvyplněné číslo (např. částečně přečtené skenerem) k ruční opravě. */
+  initialValue?: string;
+  /** Vysvětlení, proč je potřeba ruční zadání (zobrazí se nad polem). */
+  initialNote?: string;
 }
 
-export const ManualIsbnInput: React.FC<ManualIsbnInputProps> = ({ onSearch, isLoading }) => {
-  const [inputVal, setInputVal] = useState('');
+export const ManualIsbnInput: React.FC<ManualIsbnInputProps> = ({
+  onSearch,
+  isLoading,
+  initialValue = '',
+  initialNote,
+}) => {
+  const [inputVal, setInputVal] = useState(initialValue);
+  const [note, setNote] = useState<string | undefined>(initialNote);
   const [showTips, setShowTips] = useState(false);
   const [isReadingPhoto, setIsReadingPhoto] = useState(false);
   const [photoMessage, setPhotoMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const cleanVal = normalizeIsbn(inputVal);
-  const isValid = cleanVal.length > 0 && isValidIsbn(cleanVal);
-  const isLikelyPartial = cleanVal.length > 0 && (cleanVal.length === 10 || cleanVal.length === 13);
+  const hasFullLength = cleanVal.length === 10 || cleanVal.length === 13;
+  const isValid = hasFullLength && isValidIsbn(cleanVal);
+  // Kontrolní číslice nesedí – nejspíš je některá číslice opsaná špatně.
+  const isChecksumWrong = hasFullLength && !isValid;
+  // ISBN-13 musí začínat 978 nebo 979; znak X smí být jen na konci ISBN-10.
+  const formatProblem =
+    cleanVal.length === 13 && !/^97[89]/.test(cleanVal)
+      ? 'ISBN-13 musí začínat 978 nebo 979.'
+      : /X./.test(cleanVal) || (cleanVal.length === 13 && cleanVal.includes('X'))
+      ? 'Znak X může být jen na konci 10místného ISBN.'
+      : null;
+
+  const submitIsbn = () => {
+    if (!hasFullLength || isLoading) return;
+    onSearch(cleanVal);
+    setInputVal('');
+    setNote(undefined);
+    setPhotoMessage(null);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (cleanVal) {
-      onSearch(cleanVal);
-    }
+    // Platné ISBN se rovnou vyhledá. U nesedící kontrolní číslice je potřeba
+    // kliknout na „Přesto uložit“ (některé starší knihy mají ISBN vytištěné s chybou).
+    if (isValid) submitIsbn();
   };
 
   // Přečte vytištěné ISBN z fotky (tiráž, zadní strana obálky…) a rovnou knihu vyhledá.
@@ -35,11 +62,19 @@ export const ManualIsbnInput: React.FC<ManualIsbnInputProps> = ({ onSearch, isLo
     setIsReadingPhoto(true);
     setPhotoMessage(null);
     try {
-      const isbn = await readIsbnFromFile(file);
+      const { isbn, guess } = await readIsbnFromFile(file);
       if (isbn) {
-        setInputVal(isbn);
         setPhotoMessage({ ok: true, text: `Na fotce nalezeno ISBN ${formatIsbn(isbn)}.` });
         onSearch(isbn);
+        setInputVal('');
+        setNote(undefined);
+      } else if (guess) {
+        // Číslo se přečetlo jen částečně správně – předvyplníme ho k opravě.
+        setInputVal(guess);
+        setPhotoMessage({
+          ok: false,
+          text: 'Číslo se nepřečetlo celé správně (nesedí kontrolní číslice). Porovnejte ho s knihou a opravte.',
+        });
       } else {
         setPhotoMessage({
           ok: false,
@@ -82,6 +117,12 @@ export const ManualIsbnInput: React.FC<ManualIsbnInputProps> = ({ onSearch, isLo
         </div>
       )}
 
+      {note && (
+        <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl p-3 text-xs text-amber-800 dark:text-amber-200">
+          {note}
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label htmlFor="isbn-input" className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
@@ -91,6 +132,11 @@ export const ManualIsbnInput: React.FC<ManualIsbnInputProps> = ({ onSearch, isLo
             <input
               id="isbn-input"
               type="text"
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
+              enterKeyHint="search"
+              autoFocus={Boolean(initialValue || initialNote)}
               value={inputVal}
               onChange={(e) => setInputVal(e.target.value)}
               placeholder="Např. 9788020456123 nebo 802045612X"
@@ -101,7 +147,7 @@ export const ManualIsbnInput: React.FC<ManualIsbnInputProps> = ({ onSearch, isLo
               <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center">
                 {isValid ? (
                   <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-                ) : isLikelyPartial ? (
+                ) : hasFullLength ? (
                   <AlertCircle className="w-5 h-5 text-amber-500" />
                 ) : null}
               </div>
@@ -109,20 +155,46 @@ export const ManualIsbnInput: React.FC<ManualIsbnInputProps> = ({ onSearch, isLo
           </div>
 
           {cleanVal.length > 0 && (
-            <div className="mt-2 text-xs flex justify-between items-center px-1">
-              <span className="text-slate-500 dark:text-slate-400 font-mono">
-                Čisté: {formatIsbn(cleanVal)}
-              </span>
-              {!isValid && isLikelyPartial && (
-                <span className="text-amber-600 dark:text-amber-400">Kontrolní součet nesouhlasí, zkontrolovat.</span>
-              )}
+            <div className="mt-2 text-xs px-1 space-y-1">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500 dark:text-slate-400 font-mono">
+                  {hasFullLength ? formatIsbn(cleanVal) : cleanVal}
+                </span>
+                <span
+                  className={`font-medium ${
+                    isValid ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'
+                  }`}
+                >
+                  {cleanVal.length} / {cleanVal.length > 10 || cleanVal.startsWith('97') ? 13 : '10 nebo 13'} číslic
+                </span>
+              </div>
+              {formatProblem ? (
+                <p className="text-amber-600 dark:text-amber-400">{formatProblem}</p>
+              ) : isChecksumWrong ? (
+                <p className="text-amber-600 dark:text-amber-400">
+                  Kontrolní číslice nesedí – některá číslice je nejspíš opsaná špatně. Porovnejte číslo s knihou.
+                </p>
+              ) : cleanVal.length > 13 ? (
+                <p className="text-amber-600 dark:text-amber-400">Číslo je moc dlouhé – ISBN má 10 nebo 13 číslic.</p>
+              ) : null}
             </div>
           )}
         </div>
 
+        {isChecksumWrong && !formatProblem ? (
+          <button
+            type="button"
+            onClick={submitIsbn}
+            disabled={isLoading}
+            className="w-full py-3 px-4 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-300 text-white font-medium rounded-xl flex items-center justify-center space-x-2 transition-all shadow-sm active:scale-[0.99]"
+          >
+            <AlertCircle className="w-5 h-5" />
+            <span>Číslo je opsané správně – přesto uložit</span>
+          </button>
+        ) : (
         <button
           type="submit"
-          disabled={!cleanVal || isLoading}
+          disabled={!isValid || isLoading}
           className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white font-medium rounded-xl flex items-center justify-center space-x-2 transition-all shadow-sm active:scale-[0.99]"
         >
           {isLoading ? (
@@ -134,6 +206,7 @@ export const ManualIsbnInput: React.FC<ManualIsbnInputProps> = ({ onSearch, isLo
             </>
           )}
         </button>
+        )}
       </form>
 
       <div className="pt-1 border-t border-slate-200 dark:border-slate-700">

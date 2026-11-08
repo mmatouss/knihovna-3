@@ -62,6 +62,7 @@ export async function fetchBookByIsbn(isbn: string): Promise<Book> {
     description: 'Informace o této knize nebyly nalezeny v databázích. Můžete je upravit ručně.',
     coverUrl: isCzech ? obalkyCoverUrl : openLibCoverUrl,
     addedAt: new Date().toISOString(),
+    metadataMissing: true,
   };
 }
 

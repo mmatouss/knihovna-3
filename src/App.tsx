@@ -13,6 +13,20 @@ export function App() {
   const [activeTab, setActiveTab] = useState<ScanMode>('camera');
   const { books, scanHistory, addBook, updateBook, deleteBook, clearAllBooks, clearScanHistory } = useBookStorage();
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
+  // Otevřít detail knihy rovnou v úpravách (když se údaje o knize nenašly).
+  const [editOnOpen, setEditOnOpen] = useState(false);
+  // Předvyplnění ručního zadání (např. částečně přečtené číslo ze skeneru).
+  const [manualPrefill, setManualPrefill] = useState<{ value?: string; note?: string; n: number }>({ n: 0 });
+
+  const openBook = (book: Book, edit = false) => {
+    setEditOnOpen(edit);
+    setSelectedBook(book);
+  };
+
+  const goToManualEntry = (value?: string, note?: string) => {
+    setManualPrefill((prev) => ({ value, note, n: prev.n + 1 }));
+    setActiveTab('manual');
+  };
   const [isLoading, setIsLoading] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'warning' | 'error'; message: string } | null>(null);
 
@@ -34,7 +48,11 @@ export function App() {
 
         if (result.isDuplicate) {
           showToast('warning', `Kniha s ISBN ${isbn} ("${result.book.title}") už v knihovně je.`);
-          setSelectedBook(result.book);
+          openBook(result.book);
+        } else if (fetchedBook.metadataMissing) {
+          // Kniha není v žádné databázi – necháme knihovníka doplnit údaje ručně.
+          showToast('warning', `Kniha s ISBN ${isbn} nebyla v databázích nalezena. Doplňte název a autora.`);
+          openBook(fetchedBook, true);
         } else {
           showToast('success', `Přidáno a uloženo: "${fetchedBook.title}"`);
         }
@@ -155,6 +173,7 @@ export function App() {
               <BarcodeScanner
                 onScanSuccess={handleIsbnDetected}
                 isScanningActive={activeTab === 'camera'}
+                onManualEntry={goToManualEntry}
               />
 
               {isLoading && (
@@ -167,7 +186,7 @@ export function App() {
               <RecentScansList
                 scanHistory={scanHistory}
                 books={books}
-                onSelectBook={(book) => setSelectedBook(book)}
+                onSelectBook={(book) => openBook(book)}
                 onClearHistory={clearScanHistory}
                 onViewAll={() => setActiveTab('list')}
               />
@@ -177,14 +196,17 @@ export function App() {
           {activeTab === 'manual' && (
             <div className="py-2 space-y-4">
               <ManualIsbnInput
+                key={manualPrefill.n}
                 onSearch={handleIsbnDetected}
                 isLoading={isLoading}
+                initialValue={manualPrefill.value}
+                initialNote={manualPrefill.note}
               />
 
               <RecentScansList
                 scanHistory={scanHistory}
                 books={books}
-                onSelectBook={(book) => setSelectedBook(book)}
+                onSelectBook={(book) => openBook(book)}
                 onClearHistory={clearScanHistory}
                 onViewAll={() => setActiveTab('list')}
               />
@@ -194,7 +216,7 @@ export function App() {
           {activeTab === 'list' && (
             <BookList
               books={books}
-              onSelectBook={(book) => setSelectedBook(book)}
+              onSelectBook={(book) => openBook(book)}
               onClearAll={clearAllBooks}
               onNavigateToScan={() => setActiveTab('camera')}
             />
@@ -245,7 +267,9 @@ export function App() {
 
       {/* Detail Modal */}
       <BookDetailModal
+        key={selectedBook?.id ?? 'none'}
         book={selectedBook}
+        startEditing={editOnOpen}
         onClose={() => setSelectedBook(null)}
         onUpdate={(updated) => {
           updateBook(updated);
