@@ -1,8 +1,73 @@
 @import "tailwindcss";
 
+/*
+ * Vzhled aplikace „Knihovník“
+ * ---------------------------
+ * Barvy se nastavují tady na jednom místě. Komponenty používají názvy
+ * tříd `indigo-*` (hlavní barva) a `slate-*` (neutrální barvy); tady
+ * jim dáváme vlastní odstíny:
+ *   - indigo  → tmavě zelená jako stará knihovnická lampa,
+ *   - slate   → teplé „papírové“ a hnědé neutrální tóny.
+ */
+@theme {
+  --font-sans: "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Fraunces Variable", "Fraunces", "Iowan Old Style", Georgia, "Times New Roman", serif;
+
+  /* Hlavní barva – lampová zelená */
+  --color-indigo-50: oklch(0.972 0.016 160);
+  --color-indigo-100: oklch(0.94 0.032 160);
+  --color-indigo-200: oklch(0.88 0.055 160);
+  --color-indigo-300: oklch(0.8 0.075 160);
+  --color-indigo-400: oklch(0.7 0.085 160);
+  --color-indigo-500: oklch(0.57 0.085 160);
+  --color-indigo-600: oklch(0.455 0.075 160);
+  --color-indigo-700: oklch(0.39 0.065 160);
+  --color-indigo-800: oklch(0.32 0.052 160);
+  --color-indigo-900: oklch(0.27 0.042 160);
+  --color-indigo-950: oklch(0.2 0.032 160);
+
+  /* Neutrální barvy – papír, sépie, inkoust */
+  --color-slate-50: oklch(0.972 0.011 85);
+  --color-slate-100: oklch(0.945 0.014 82);
+  --color-slate-200: oklch(0.9 0.017 80);
+  --color-slate-300: oklch(0.835 0.02 78);
+  --color-slate-400: oklch(0.69 0.022 74);
+  --color-slate-500: oklch(0.555 0.022 70);
+  --color-slate-600: oklch(0.45 0.021 65);
+  --color-slate-700: oklch(0.37 0.019 60);
+  --color-slate-800: oklch(0.275 0.016 58);
+  --color-slate-900: oklch(0.215 0.013 56);
+  --color-slate-950: oklch(0.16 0.01 55);
+}
+
 @layer base {
   body {
-    @apply bg-slate-50 text-slate-900 min-h-screen font-sans antialiased selection:bg-indigo-500 selection:text-white;
+    @apply bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 min-h-screen font-sans antialiased selection:bg-indigo-500 selection:text-white;
+  }
+
+  /* Nadpisy a názvy knih patkovým písmem */
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+    font-optical-sizing: auto;
+    letter-spacing: -0.01em;
+  }
+}
+
+/* Jemná textura papíru na pozadí aplikace */
+.paper-bg {
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -10%, oklch(0.93 0.035 160 / 0.55), transparent 70%),
+    radial-gradient(circle at 1px 1px, oklch(0.5 0.02 70 / 0.06) 1px, transparent 0);
+  background-size: auto, 22px 22px;
+}
+@media (prefers-color-scheme: dark) {
+  .paper-bg {
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -10%, oklch(0.32 0.05 160 / 0.45), transparent 70%),
+      radial-gradient(circle at 1px 1px, oklch(0.9 0.02 80 / 0.04) 1px, transparent 0);
   }
 }
 

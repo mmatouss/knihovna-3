@@ -12,7 +12,9 @@ import {
   Plus,
   SlidersHorizontal,
   X,
+  ChevronRight,
 } from 'lucide-react';
+import { BookCover } from './BookCover';
 import { formatIsbn } from '../utils/isbn';
 import { exportBooksToCsv } from '../utils/csvExport';
 import {
@@ -169,17 +171,20 @@ export const BookList: React.FC<BookListProps> = ({
     });
 
   const isFiltering = activeFilterCount > 0 || searchQuery.trim() !== '';
+  const totalCopies = books.reduce((sum, b) => sum + getCopies(b), 0);
 
   return (
-    <div className="w-full max-w-3xl mx-auto space-y-4">
+    <div className="w-full mx-auto space-y-4">
       {/* Top Header & Toolbar */}
-      <div className="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm space-y-3">
+      <div className="bg-white/90 dark:bg-slate-800/90 backdrop-blur rounded-2xl p-4 sm:p-5 border border-slate-200/80 dark:border-slate-700 shadow-[0_1px_2px_rgba(60,40,20,0.05)] space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center space-x-2">
-            <BookOpen className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-            <h2 className="text-lg font-bold text-slate-900 dark:text-white">
-              Knihovna <span className="text-xs font-normal text-slate-500 font-mono ml-1">({books.length})</span>
-            </h2>
+          <div>
+            <h2 className="text-2xl font-semibold text-slate-900 dark:text-white leading-tight">Moje knihovna</h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              {books.length} {books.length === 1 ? 'titul' : books.length >= 2 && books.length <= 4 ? 'tituly' : 'titulů'}
+              {' · '}
+              {totalCopies} {totalCopies === 1 ? 'výtisk' : totalCopies >= 2 && totalCopies <= 4 ? 'výtisky' : 'výtisků'}
+            </p>
           </div>
 
           <div className="flex items-center space-x-2">
@@ -232,14 +237,14 @@ export const BookList: React.FC<BookListProps> = ({
             </div>
 
             {/* Sort & View Mode Toggles */}
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="relative flex items-center min-w-0 max-w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1.5">
+            <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
+              <div className="relative flex flex-1 sm:flex-none items-center min-w-[9rem] max-w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1.5">
                 <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 mr-1.5" />
                 <select
                   value={sortOrder}
                   onChange={(e) => setSortOrder(e.target.value as SortOrder)}
                   aria-label="Řazení"
-                  className="bg-transparent text-xs text-slate-700 dark:text-slate-200 focus:outline-none cursor-pointer min-w-0 max-w-[11rem]"
+                  className="bg-transparent text-xs text-slate-700 dark:text-slate-200 focus:outline-none cursor-pointer min-w-0 w-full sm:w-auto"
                 >
                   <option value="newest" className="dark:bg-slate-800">Nejnovější</option>
                   <option value="title" className="dark:bg-slate-800">Název (A-Z)</option>
@@ -449,76 +454,92 @@ export const BookList: React.FC<BookListProps> = ({
         <div
           className={
             viewMode === 'list'
-              ? 'space-y-2'
-              : 'grid grid-cols-2 sm:grid-cols-3 gap-3'
+              ? 'grid grid-cols-1 lg:grid-cols-2 gap-2.5'
+              : 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-4 gap-y-6'
           }
         >
-          {filteredBooks.map((book) => (
-            <div
-              key={book.id}
-              onClick={() => onSelectBook(book)}
-              className={`bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 hover:border-indigo-400 dark:hover:border-indigo-500 shadow-xs hover:shadow-md transition-all cursor-pointer overflow-hidden ${
-                viewMode === 'list' ? 'p-3 flex items-center space-x-3' : 'p-3 flex flex-col justify-between'
-              }`}
-            >
-              {/* Cover thumbnail */}
-              <div
-                className={`flex-shrink-0 bg-slate-100 dark:bg-slate-700 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-600 flex items-center justify-center ${
-                  viewMode === 'list' ? 'w-12 h-16' : 'w-full aspect-[2/3] mb-2'
-                }`}
-              >
-                {book.coverUrl ? (
-                  <img
-                    src={book.coverUrl}
-                    alt={book.title}
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).style.display = 'none';
-                    }}
-                  />
-                ) : (
-                  <BookOpen className="w-6 h-6 text-slate-400" />
+          {filteredBooks.map((book) => {
+            const copies = getCopies(book);
+            const editions = editionCounts.get(book.id) ?? 1;
+            const meta = [book.publishedDate, book.publisher].filter(Boolean).join(' · ');
+            const badges = (
+              <>
+                {copies > 1 && (
+                  <span className="px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-700/70 text-[10px] font-semibold text-slate-700 dark:text-slate-200">
+                    {copies}× výtisk
+                  </span>
                 )}
-              </div>
+                {editions > 1 && (
+                  <span className="px-1.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/60 text-[10px] font-semibold text-indigo-700 dark:text-indigo-300 ring-1 ring-inset ring-indigo-200/70 dark:ring-indigo-800">
+                    {editions} vydání
+                  </span>
+                )}
+                {book.metadataMissing && (
+                  <span className="px-1.5 py-0.5 rounded-md bg-amber-50 dark:bg-amber-950/60 text-[10px] font-semibold text-amber-800 dark:text-amber-300 ring-1 ring-inset ring-amber-200 dark:ring-amber-800">
+                    Chybí údaje
+                  </span>
+                )}
+                {!book.isbn && (
+                  <span className="px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-700/70 text-[10px] font-medium text-slate-500 dark:text-slate-300">
+                    Bez ISBN
+                  </span>
+                )}
+              </>
+            );
 
-              {/* Text Info */}
-              <div className="flex-1 min-w-0">
-                <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate leading-snug">
+            return viewMode === 'list' ? (
+              <button
+                type="button"
+                key={book.id}
+                onClick={() => onSelectBook(book)}
+                className="group text-left bg-white/90 dark:bg-slate-800/90 rounded-2xl border border-slate-200/80 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-700 shadow-[0_1px_2px_rgba(60,40,20,0.05)] hover:shadow-md hover:-translate-y-px transition-all p-3 flex items-center gap-3.5"
+              >
+                <BookCover
+                  title={book.title}
+                  authors={book.authors}
+                  coverUrl={book.coverUrl}
+                  variant="compact"
+                  className="w-12 h-[4.5rem] flex-shrink-0"
+                />
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-[15px] font-semibold text-slate-900 dark:text-white truncate leading-snug">
+                    {book.title}
+                  </h4>
+                  <p className="text-xs text-slate-600 dark:text-slate-400 truncate">{book.authors.join(', ')}</p>
+                  {meta && <p className="text-[11px] text-slate-500 dark:text-slate-500 truncate mt-0.5">{meta}</p>}
+                  <div className="flex flex-wrap items-center gap-1 mt-1.5">
+                    {badges}
+                    {book.isbn && (
+                      <span className="inline-flex items-center text-[10px] font-mono text-slate-400 dark:text-slate-500">
+                        <Hash className="w-3 h-3 mr-0.5" />
+                        {formatIsbn(book.isbn)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-slate-300 dark:text-slate-600 group-hover:text-indigo-500 flex-shrink-0 transition-colors" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                key={book.id}
+                onClick={() => onSelectBook(book)}
+                className="group text-left flex flex-col"
+              >
+                <BookCover
+                  title={book.title}
+                  authors={book.authors}
+                  coverUrl={book.coverUrl}
+                  className="w-full aspect-[2/3] transition-transform group-hover:-translate-y-1 group-hover:rotate-[-0.6deg]"
+                />
+                <h4 className="mt-2.5 text-sm font-semibold text-slate-900 dark:text-white leading-snug line-clamp-2">
                   {book.title}
                 </h4>
-                <p className="text-[11px] text-slate-600 dark:text-slate-400 truncate mt-0.5">
-                  {book.authors.join(', ')}
-                </p>
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {getCopies(book) > 1 && (
-                    <span className="px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/60 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300">
-                      {getCopies(book)}× výtisk
-                    </span>
-                  )}
-                  {(editionCounts.get(book.id) ?? 1) > 1 && (
-                    <span className="px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-950/60 text-[10px] font-semibold text-indigo-700 dark:text-indigo-300">
-                      {editionCounts.get(book.id)} vydání
-                    </span>
-                  )}
-                  {book.metadataMissing && (
-                    <span className="px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/60 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
-                      Chybí údaje
-                    </span>
-                  )}
-                </div>
-                {book.isbn ? (
-                  <div className="flex items-center space-x-1 mt-1 text-[10px] font-mono text-indigo-600 dark:text-indigo-400">
-                    <Hash className="w-3 h-3 text-slate-400" />
-                    <span>{formatIsbn(book.isbn)}</span>
-                  </div>
-                ) : (
-                  <div className="inline-flex mt-1 px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-[10px] font-medium text-slate-500 dark:text-slate-300">
-                    Bez ISBN{book.publishedDate ? ` · ${book.publishedDate}` : ''}
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
+                <p className="text-[11px] text-slate-600 dark:text-slate-400 truncate">{book.authors.join(', ')}</p>
+                <div className="flex flex-wrap gap-1 mt-1">{badges}</div>
+              </button>
+            );
+          })}
         </div>
       )}
     </div>

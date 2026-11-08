@@ -9,7 +9,7 @@ import { BookDetailModal } from './components/BookDetailModal';
 import { RecentScansList } from './components/RecentScansList';
 import { ManualBookForm } from './components/ManualBookForm';
 import { copiesLabel, findBookByIsbn, findOtherEditions, getCopies } from './utils/bookMatching';
-import { Camera, Keyboard, Library, CheckCircle2, AlertCircle, BookOpen, Sparkles } from 'lucide-react';
+import { Camera, Keyboard, Library, CheckCircle2, AlertCircle } from 'lucide-react';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<ScanMode>('camera');
@@ -128,38 +128,39 @@ export function App() {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 flex flex-col font-sans pb-20 sm:pb-6">
+    <div className="min-h-screen paper-bg bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 flex flex-col font-sans pb-24 sm:pb-8">
       {/* Top Application Header */}
-      <header className="sticky top-0 z-30 bg-white/80 dark:bg-slate-800/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-700/80 px-4 py-3">
-        <div className="max-w-3xl mx-auto flex items-center justify-between">
-          <div className="flex items-center space-x-2.5">
-            <div className="w-9 h-9 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-sm shadow-indigo-200 dark:shadow-none">
-              <BookOpen className="w-5 h-5" />
-            </div>
+      <header className="sticky top-0 z-30 bg-slate-50/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200/70 dark:border-slate-800 px-4 py-3">
+        <div className="max-w-5xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <svg viewBox="0 0 64 64" className="w-10 h-10 flex-shrink-0 drop-shadow-sm" aria-hidden="true">
+              <rect width="64" height="64" rx="14" className="fill-indigo-700 dark:fill-indigo-600" />
+              <path d="M16 18c6-2 11-1.5 16 2v28c-5-3.5-10-4-16-2z" fill="#f4ead5" />
+              <path d="M48 18c-6-2-11-1.5-16 2v28c5-3.5 10-4 16-2z" fill="#e6d7b5" />
+              <path d="M38 14h6v14l-3-2.4-3 2.4z" fill="#b8862b" />
+            </svg>
             <div>
-              <h1 className="text-base font-extrabold text-slate-900 dark:text-white leading-none">
-                Knihovník <span className="text-indigo-600 dark:text-indigo-400">ISBN</span>
-              </h1>
-              <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400 mt-0.5">
-                Mobilní skener čárových kódů & automatický ukládací katalog
-              </p>
+              <h1 className="text-xl font-semibold text-slate-900 dark:text-white leading-none">Knihovník</h1>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Katalog školní knihovny</p>
             </div>
           </div>
 
           <div className="flex items-center space-x-2">
             <button
               onClick={() => setActiveTab('list')}
-              className="relative px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700/70 dark:hover:bg-slate-700 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors flex items-center space-x-1.5"
+              className="relative pl-2.5 pr-3 py-1.5 bg-white/80 hover:bg-white dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-full text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors flex items-center gap-1.5 shadow-[0_1px_2px_rgba(60,40,20,0.06)]"
             >
               <Library className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-              <span>{books.length} knih</span>
+              <span>
+                {books.length} {books.length === 1 ? 'kniha' : books.length >= 2 && books.length <= 4 ? 'knihy' : 'knih'}
+              </span>
             </button>
           </div>
         </div>
       </header>
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-3xl w-full mx-auto p-4 space-y-4">
+      <main className="flex-1 max-w-5xl w-full mx-auto p-4 sm:pt-6 space-y-4">
         {/* Toast Notification */}
         {notification && (
           <div
@@ -190,12 +191,12 @@ export function App() {
         )}
 
         {/* Desktop Tab Selector */}
-        <div className="hidden sm:flex bg-slate-200/60 dark:bg-slate-800 p-1 rounded-2xl max-w-md mx-auto">
+        <div className="hidden sm:flex bg-slate-200/50 dark:bg-slate-800/80 p-1 rounded-full max-w-md mx-auto border border-slate-200/70 dark:border-slate-700">
           <button
             onClick={() => setActiveTab('camera')}
-            className={`flex-1 py-2 rounded-xl text-xs font-bold flex items-center justify-center space-x-2 transition-all ${
+            className={`flex-1 py-2 rounded-full text-xs font-semibold flex items-center justify-center space-x-2 transition-all ${
               activeTab === 'camera'
-                ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-xs'
+                ? 'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-sm'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
@@ -204,9 +205,9 @@ export function App() {
           </button>
           <button
             onClick={() => setActiveTab('manual')}
-            className={`flex-1 py-2 rounded-xl text-xs font-bold flex items-center justify-center space-x-2 transition-all ${
+            className={`flex-1 py-2 rounded-full text-xs font-semibold flex items-center justify-center space-x-2 transition-all ${
               activeTab === 'manual'
-                ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-xs'
+                ? 'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-sm'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
@@ -215,9 +216,9 @@ export function App() {
           </button>
           <button
             onClick={() => setActiveTab('list')}
-            className={`flex-1 py-2 rounded-xl text-xs font-bold flex items-center justify-center space-x-2 transition-all ${
+            className={`flex-1 py-2 rounded-full text-xs font-semibold flex items-center justify-center space-x-2 transition-all ${
               activeTab === 'list'
-                ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-xs'
+                ? 'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-sm'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
@@ -230,13 +231,10 @@ export function App() {
         <div className="mt-2 space-y-4">
           {activeTab === 'camera' && (
             <div className="space-y-4">
-              <div className="text-center space-y-1">
-                <h2 className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center justify-center space-x-1.5">
-                  <Sparkles className="w-4 h-4 text-indigo-500" />
-                  <span>Naskenujte čárový kód na knize</span>
-                </h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Kniha se po naskenování automaticky uloží do paměti aplikace.
+              <div className="text-center space-y-1 pt-1">
+                <h2 className="text-2xl font-semibold text-slate-900 dark:text-white">Naskenujte knihu</h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mx-auto">
+                  Namiřte kameru na čárový kód nebo číslo ISBN. Kniha se sama uloží do katalogu.
                 </p>
               </div>
 
@@ -302,43 +300,34 @@ export function App() {
       </main>
 
       {/* Mobile Bottom Navigation Bar */}
-      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/90 dark:bg-slate-800/90 backdrop-blur-md border-t border-slate-200 dark:border-slate-700/80 sm:hidden px-4 py-2">
+      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-slate-50/90 dark:bg-slate-900/90 backdrop-blur-md border-t border-slate-200/80 dark:border-slate-800 sm:hidden px-4 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
         <div className="max-w-md mx-auto flex items-center justify-around">
-          <button
-            onClick={() => setActiveTab('camera')}
-            className={`flex flex-col items-center py-1 px-3 rounded-xl transition-all ${
-              activeTab === 'camera'
-                ? 'text-indigo-600 dark:text-indigo-400 font-bold'
-                : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 font-normal'
-            }`}
-          >
-            <Camera className="w-5 h-5 mb-0.5" />
-            <span className="text-[10px]">Skener</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('manual')}
-            className={`flex flex-col items-center py-1 px-3 rounded-xl transition-all ${
-              activeTab === 'manual'
-                ? 'text-indigo-600 dark:text-indigo-400 font-bold'
-                : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 font-normal'
-            }`}
-          >
-            <Keyboard className="w-5 h-5 mb-0.5" />
-            <span className="text-[10px]">Ručně</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('list')}
-            className={`flex flex-col items-center py-1 px-3 rounded-xl transition-all relative ${
-              activeTab === 'list'
-                ? 'text-indigo-600 dark:text-indigo-400 font-bold'
-                : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 font-normal'
-            }`}
-          >
-            <Library className="w-5 h-5 mb-0.5" />
-            <span className="text-[10px]">Knihovna ({books.length})</span>
-          </button>
+          {([
+            ['camera', Camera, 'Skener'],
+            ['manual', Keyboard, 'Ručně'],
+            ['list', Library, `Knihovna (${books.length})`],
+          ] as const).map(([tab, Icon, label]) => {
+            const active = activeTab === tab;
+            return (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                aria-current={active ? 'page' : undefined}
+                className={`flex flex-col items-center gap-0.5 px-3 transition-colors ${
+                  active ? 'text-indigo-700 dark:text-indigo-300' : 'text-slate-500 dark:text-slate-400'
+                }`}
+              >
+                <span
+                  className={`px-4 py-1 rounded-full transition-colors ${
+                    active ? 'bg-indigo-100 dark:bg-indigo-900/60' : ''
+                  }`}
+                >
+                  <Icon className="w-5 h-5" />
+                </span>
+                <span className={`text-[11px] ${active ? 'font-semibold' : 'font-medium'}`}>{label}</span>
+              </button>
+            );
+          })}
         </div>
       </nav>
 
