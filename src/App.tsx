@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import type { Book, ScanMode } from './types/book';
 import { useBookStorage } from './hooks/useBookStorage';
-import { fetchBookByIsbn } from './services/bookApi';
+import { enrichBook, fetchBookByIsbn } from './services/bookApi';
 import { BarcodeScanner } from './components/BarcodeScanner';
 import { ManualIsbnInput } from './components/ManualIsbnInput';
 import { BookList } from './components/BookList';
@@ -61,6 +61,23 @@ export function App() {
     setTimeout(() => {
       setNotification((prev) => (prev?.message === message ? null : prev));
     }, action ? 7000 : 3500);
+  };
+
+  // Doplnění chybějících údajů (počet stran, jazyk…) z online databází.
+  const handleEnrichBook = async (book: Book) => {
+    try {
+      const { book: enriched, filled } = await enrichBook(book);
+      if (filled.length > 0) {
+        updateBook(enriched);
+        setSelectedBook(enriched);
+        showToast('success', `Doplněno: ${filled.join(', ')}.`);
+      } else {
+        showToast('warning', 'V online databázích se žádné další údaje nenašly.');
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('error', 'Údaje se nepodařilo načíst. Zkontrolujte připojení k internetu.');
+    }
   };
 
   // Smazání knihy s možností vrátit to zpět.
@@ -339,6 +356,7 @@ export function App() {
         onSelectBook={(book) => openBook(book)}
         startEditing={modalMode.edit}
         isDuplicateScan={modalMode.duplicate}
+        onEnrich={handleEnrichBook}
         onClose={() => setSelectedBook(null)}
         onUpdate={(updated) => {
           updateBook(updated);

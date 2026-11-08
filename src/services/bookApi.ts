@@ -40,15 +40,23 @@ export async function fetchBookByIsbn(isbn: string): Promise<Book> {
   const googleBook = googleRes.status === 'fulfilled' ? googleRes.value : null;
   const openLibBook = openLibRes.status === 'fulfilled' ? openLibRes.value : null;
 
-  // Order of preference
-  if (isCzech) {
-    if (obalkyBook) return obalkyBook;
-    if (googleBook) return googleBook;
-    if (openLibBook) return openLibBook;
-  } else {
-    if (googleBook) return googleBook;
-    if (openLibBook) return openLibBook;
-    if (obalkyBook) return obalkyBook;
+  // Pořadí důvěryhodnosti zdrojů: u českých knih nejdřív Obálky knih.
+  const ranked: Array<[string, Book | null]> = isCzech
+    ? [['Obálky knih', obalkyBook], ['Google Books', googleBook], ['Open Library', openLibBook]]
+    : [['Google Books', googleBook], ['Open Library', openLibBook], ['Obálky knih', obalkyBook]];
+  const found = ranked.filter((entry): entry is [string, Book] => entry[1] !== null);
+
+  if (found.length > 0) {
+    // Hlavní údaje bereme z nejlepšího zdroje, chybějící (např. počet stran,
+    // jazyk, žánr) doplníme z ostatních. Dřív se ostatní zdroje zahazovaly.
+    let merged = found[0][1];
+    const sources = [found[0][0]];
+    for (const [name, other] of found.slice(1)) {
+      const { book, filled } = fillMissingFields(merged, other);
+      merged = book;
+      if (filled.length > 0) sources.push(name);
+    }
+    return { ...merged, source: sources.join(', ') };
   }
 
   // 4. Fallback: Create placeholder book for manual metadata entry by librarian
@@ -64,6 +72,75 @@ export async function fetchBookByIsbn(isbn: string): Promise<Book> {
     addedAt: new Date().toISOString(),
     metadataMissing: true,
   };
+}
+
+const UNKNOWN_AUTHOR = 'Neznámý autor';
+
+/** Názvy údajů pro zprávu „Doplněno: …“. */
+const FIELD_LABELS = {
+  authors: 'autor',
+  publisher: 'nakladatelství',
+  publishedDate: 'rok vydání',
+  description: 'popis',
+  pageCount: 'počet stran',
+  categories: 'žánr',
+  language: 'jazyk',
+} as const;
+
+/**
+ * Doplní do knihy jen ty údaje, které chybí (nic nepřepisuje).
+ * Vrátí novou knihu a seznam doplněných údajů (česky).
+ */
+export function fillMissingFields(target: Book, from: Book): { book: Book; filled: string[] } {
+  const book: Book = { ...target };
+  const filled: string[] = [];
+  const hasAuthors = (b: Book) => b.authors.some((a) => a && a !== UNKNOWN_AUTHOR);
+
+  if (!hasAuthors(book) && hasAuthors(from)) {
+    book.authors = from.authors;
+    filled.push(FIELD_LABELS.authors);
+  }
+  if (!book.publisher && from.publisher) {
+    book.publisher = from.publisher;
+    filled.push(FIELD_LABELS.publisher);
+  }
+  if (!book.publishedDate && from.publishedDate) {
+    book.publishedDate = from.publishedDate;
+    filled.push(FIELD_LABELS.publishedDate);
+  }
+  if (!book.description && from.description) {
+    book.description = from.description;
+    filled.push(FIELD_LABELS.description);
+  }
+  if (!book.pageCount && from.pageCount) {
+    book.pageCount = from.pageCount;
+    filled.push(FIELD_LABELS.pageCount);
+  }
+  if ((!book.categories || book.categories.length === 0) && from.categories && from.categories.length > 0) {
+    book.categories = from.categories;
+    filled.push(FIELD_LABELS.categories);
+  }
+  if (!book.language && from.language) {
+    book.language = from.language;
+    filled.push(FIELD_LABELS.language);
+  }
+  return { book, filled };
+}
+
+/**
+ * Znovu vyhledá knihu podle ISBN a doplní chybějící údaje (počet stran, jazyk…).
+ * Údaje, které už kniha má (třeba ručně upravené), se nemění.
+ */
+export async function enrichBook(book: Book): Promise<{ book: Book; filled: string[] }> {
+  if (!book.isbn) return { book, filled: [] };
+  const fetched = await fetchBookByIsbn(book.isbn);
+  if (fetched.metadataMissing) return { book, filled: [] };
+  const result = fillMissingFields(book, fetched);
+  if (result.filled.length > 0 && fetched.source) {
+    const sources = new Set([...(book.source ?? '').split(', '), ...fetched.source.split(', ')].filter(Boolean));
+    result.book.source = [...sources].join(', ');
+  }
+  return result;
 }
 
 async function fetchFromGoogleBooks(
@@ -95,12 +172,13 @@ async function fetchFromGoogleBooks(
           isbn: cleanIsbn,
           title: item.title || 'Bez názvu',
           authors: item.authors || ['Neznámý autor'],
-          publisher: item.publisher || 'Neznámé nakladatelství',
+          publisher: item.publisher || '',
           publishedDate: item.publishedDate || '',
           description: item.description || '',
           coverUrl: coverUrl.replace('http://', 'https://'),
           pageCount: item.pageCount || undefined,
           categories: item.categories || [],
+          language: item.language || undefined,
           addedAt: new Date().toISOString(),
         };
       }

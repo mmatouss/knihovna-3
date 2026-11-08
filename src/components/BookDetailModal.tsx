@@ -14,10 +14,16 @@ import {
   Plus,
   Minus,
   AlertCircle,
+  User,
+  Languages,
+  Tag,
+  Clock,
+  Database,
+  RefreshCw,
 } from 'lucide-react';
 import { BookCover } from './BookCover';
 import { formatIsbn, isValidIsbn, normalizeIsbn } from '../utils/isbn';
-import { copiesLabel, findBookByIsbn, findOtherEditions, getCopies } from '../utils/bookMatching';
+import { copiesLabel, findBookByIsbn, findOtherEditions, getCopies, languageName } from '../utils/bookMatching';
 
 interface BookDetailModalProps {
   book: Book | null;
@@ -32,6 +38,8 @@ interface BookDetailModalProps {
   startEditing?: boolean;
   /** Kniha byla právě znovu naskenována – nabídnout přidání dalšího výtisku. */
   isDuplicateScan?: boolean;
+  /** Doplní chybějící údaje z online databází (podle ISBN). */
+  onEnrich?: (book: Book) => Promise<void>;
 }
 
 const inputClass =
@@ -46,6 +54,7 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
   onSelectBook,
   startEditing = false,
   isDuplicateScan = false,
+  onEnrich,
 }) => {
   // Pozn.: komponenta se pro každou knihu vytváří znovu (viz `key` v App.tsx),
   // takže se pole vždy předvyplní údaji právě otevřené knihy.
@@ -59,11 +68,15 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
     edition: book?.edition || '',
     pageCount: book?.pageCount ? String(book.pageCount) : '',
     copies: book ? String(getCopies(book)) : '1',
+    language: languageName(book?.language),
+    categories: book?.categories?.join(', ') ?? '',
     notes: book?.notes || '',
   };
   const [isEditing, setIsEditing] = useState(startEditing);
   const [form, setForm] = useState(initial);
   const [showDuplicateNotice, setShowDuplicateNotice] = useState(isDuplicateScan);
+  const [isEnriching, setIsEnriching] = useState(false);
+  const [showFullDescription, setShowFullDescription] = useState(false);
 
   if (!book) return null;
 
@@ -72,6 +85,31 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
 
   const otherEditions = findOtherEditions(book, books);
   const copies = getCopies(book);
+
+  const knownAuthors = book.authors.filter((a) => a && a !== 'Neznámý autor');
+  const addedAt = new Date(book.addedAt);
+  const infoRows: Array<[React.ElementType, string, string]> = [
+    [User, 'Autor', knownAuthors.join(', ')],
+    [Building, 'Nakladatelství', book.publisher || ''],
+    [Calendar, 'Rok vydání', book.publishedDate || ''],
+    [Layers, 'Vydání', book.edition || ''],
+    [FileText, 'Počet stran', book.pageCount ? `${book.pageCount} stran` : ''],
+    [Languages, 'Jazyk', languageName(book.language)],
+    [Tag, 'Žánr / téma', book.categories && book.categories.length > 0 ? book.categories.join(', ') : ''],
+    [Hash, 'ISBN', book.isbn ? formatIsbn(book.isbn) : 'kniha nemá ISBN'],
+    [Clock, 'Přidáno', isNaN(addedAt.getTime()) ? '' : addedAt.toLocaleDateString('cs-CZ', { day: 'numeric', month: 'long', year: 'numeric' })],
+    [Database, 'Zdroj údajů', book.source || (book.isbn ? '' : 'zapsáno ručně')],
+  ];
+  // Údaje, které lze zkusit doplnit z internetu.
+  const missingFields = [
+    !knownAuthors.length && 'autor',
+    !book.publisher && 'nakladatelství',
+    !book.publishedDate && 'rok vydání',
+    !book.pageCount && 'počet stran',
+    !book.language && 'jazyk',
+    !(book.categories && book.categories.length) && 'žánr',
+    !book.description && 'popis',
+  ].filter(Boolean) as string[];
 
   // --- Kontrola formuláře ---
   const cleanIsbn = normalizeIsbn(form.isbn);
@@ -105,6 +143,8 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
       edition: form.edition.trim(),
       pageCount: form.pageCount.trim() ? Number(form.pageCount) : undefined,
       copies: Number(form.copies),
+      language: form.language.trim() || undefined,
+      categories: form.categories.split(',').map((c) => c.trim()).filter(Boolean),
       notes: form.notes.trim(),
       // Odstraníme automatický text „Informace nebyly nalezeny…“.
       description: book.metadataMissing ? '' : book.description,
@@ -272,33 +312,72 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
           {/* Details / Edit Form */}
           {!isEditing ? (
             <div className="space-y-3 text-xs border-t border-slate-100 dark:border-slate-700/60 pt-4">
-              {book.publisher && (
-                <div className="flex items-center text-slate-600 dark:text-slate-300">
-                  <Building className="w-4 h-4 mr-2 text-slate-400 flex-shrink-0" />
-                  <span>Nakladatelství: <strong className="text-slate-800 dark:text-slate-100">{book.publisher}</strong></span>
-                </div>
-              )}
-              {book.publishedDate && (
-                <div className="flex items-center text-slate-600 dark:text-slate-300">
-                  <Calendar className="w-4 h-4 mr-2 text-slate-400 flex-shrink-0" />
-                  <span>Rok / Datum vydání: <strong className="text-slate-800 dark:text-slate-100">{book.publishedDate}</strong></span>
-                </div>
-              )}
-              {book.edition && (
-                <div className="flex items-center text-slate-600 dark:text-slate-300">
-                  <Layers className="w-4 h-4 mr-2 text-slate-400 flex-shrink-0" />
-                  <span>Vydání: <strong className="text-slate-800 dark:text-slate-100">{book.edition}</strong></span>
-                </div>
-              )}
-              {book.pageCount ? (
-                <div className="flex items-center text-slate-600 dark:text-slate-300">
-                  <FileText className="w-4 h-4 mr-2 text-slate-400 flex-shrink-0" />
-                  <span>Počet stran: <strong className="text-slate-800 dark:text-slate-100">{book.pageCount}</strong></span>
-                </div>
-              ) : null}
+              {/* Přehled všech údajů o knize */}
+              <div>
+                <h4 className="text-base font-semibold text-slate-900 dark:text-white mb-2">Informace o knize</h4>
+                <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2" data-testid="book-info">
+                  {infoRows.map(([Icon, label, value]) => (
+                    <React.Fragment key={label}>
+                      <dt className="flex items-center text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                        <Icon className="w-3.5 h-3.5 mr-1.5 text-slate-400 flex-shrink-0" />
+                        {label}
+                      </dt>
+                      <dd
+                        className={
+                          value
+                            ? 'text-slate-800 dark:text-slate-100 font-medium min-w-0 break-words'
+                            : 'text-slate-400 dark:text-slate-500 italic'
+                        }
+                      >
+                        {value || 'neuvedeno'}
+                      </dd>
+                    </React.Fragment>
+                  ))}
+                </dl>
+
+                {book.isbn && missingFields.length > 0 && onEnrich && (
+                  <div className="mt-3">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setIsEnriching(true);
+                        try {
+                          await onEnrich(book);
+                        } finally {
+                          setIsEnriching(false);
+                        }
+                      }}
+                      disabled={isEnriching}
+                      className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-medium flex items-center disabled:opacity-60"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isEnriching ? 'animate-spin' : ''}`} />
+                      {isEnriching ? 'Hledám údaje…' : 'Doplnit chybějící údaje z internetu'}
+                    </button>
+                    <p className="mt-1 text-[10px] text-slate-400">Chybí: {missingFields.join(', ')}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Popis / anotace */}
               {book.description && (
-                <div className="bg-slate-50 dark:bg-slate-700/40 p-3 rounded-xl border border-slate-100 dark:border-slate-700/50">
-                  <p className="text-slate-600 dark:text-slate-300 line-clamp-4">{book.description}</p>
+                <div>
+                  <h4 className="text-base font-semibold text-slate-900 dark:text-white mb-1.5">Popis</h4>
+                  <p
+                    className={`text-slate-600 dark:text-slate-300 leading-relaxed whitespace-pre-line ${
+                      showFullDescription ? '' : 'line-clamp-5'
+                    }`}
+                  >
+                    {book.description}
+                  </p>
+                  {book.description.length > 300 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowFullDescription(!showFullDescription)}
+                      className="mt-1 text-indigo-700 dark:text-indigo-300 font-medium"
+                    >
+                      {showFullDescription ? 'Zobrazit méně' : 'Zobrazit celý popis'}
+                    </button>
+                  )}
                 </div>
               )}
               {book.notes && (
@@ -399,6 +478,30 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
                   />
                 </div>
               </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="edit-language" className="block text-slate-500 mb-1">Jazyk</label>
+                  <input
+                    id="edit-language"
+                    type="text"
+                    value={form.language}
+                    onChange={set('language')}
+                    placeholder="Např. čeština"
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="edit-categories" className="block text-slate-500 mb-1">Žánr / téma (čárkou)</label>
+                  <input
+                    id="edit-categories"
+                    type="text"
+                    value={form.categories}
+                    onChange={set('categories')}
+                    placeholder="Např. pohádky, poezie"
+                    className={inputClass}
+                  />
+                </div>
+              </div>
               {(pagesError || copiesError) && (
                 <p className="text-rose-600 dark:text-rose-400">{pagesError || copiesError}</p>
               )}
@@ -438,7 +541,12 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
 
           {!isEditing ? (
             <button
-              onClick={() => setIsEditing(true)}
+              onClick={() => {
+                // Vždy začít z aktuálních údajů (kniha se mohla mezitím změnit,
+                // např. přidáním výtisku nebo doplněním údajů z internetu).
+                setForm(initial);
+                setIsEditing(true);
+              }}
               className="px-4 py-2 bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 rounded-xl font-medium text-xs flex items-center space-x-1.5 hover:opacity-90 transition-opacity"
             >
               <Edit2 className="w-4 h-4" />
