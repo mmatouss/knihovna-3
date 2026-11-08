@@ -173,6 +173,7 @@ export function App() {
               <BarcodeScanner
                 onScanSuccess={handleIsbnDetected}
                 isScanningActive={activeTab === 'camera'}
+                isPaused={selectedBook !== null || isLoading}
                 onManualEntry={goToManualEntry}
               />
 
