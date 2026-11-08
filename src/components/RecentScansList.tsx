@@ -1,6 +1,7 @@
 import React from 'react';
 import type { Book, ScanRecord } from '../types/book';
-import { History, CheckCircle2, AlertCircle, BookOpen, Clock, ChevronRight, Trash2 } from 'lucide-react';
+import { History, CheckCircle2, AlertCircle, Clock, ChevronRight, Trash2 } from 'lucide-react';
+import { BookCover } from './BookCover';
 import { formatIsbn } from '../utils/isbn';
 
 interface RecentScansListProps {
@@ -77,20 +78,13 @@ export const RecentScansList: React.FC<RecentScansListProps> = ({
                 }`}
               >
                 <div className="flex items-center space-x-3 min-w-0 pr-2">
-                  <div className="w-8 h-10 bg-slate-100 dark:bg-slate-700 rounded overflow-hidden flex-shrink-0 flex items-center justify-center border border-slate-200 dark:border-slate-600">
-                    {matchedBook?.coverUrl || record.bookCoverUrl ? (
-                      <img
-                        src={matchedBook?.coverUrl || record.bookCoverUrl}
-                        alt=""
-                        className="w-full h-full object-cover"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'none';
-                        }}
-                      />
-                    ) : (
-                      <BookOpen className="w-4 h-4 text-slate-400" />
-                    )}
-                  </div>
+                  <BookCover
+                    title={matchedBook?.title || record.bookTitle || record.isbn || '?'}
+                    authors={matchedBook?.authors}
+                    coverUrl={matchedBook?.coverUrl || record.bookCoverUrl}
+                    variant="compact"
+                    className="w-8 h-11 flex-shrink-0"
+                  />
 
                   <div className="min-w-0 flex-1">
                     <div className="font-semibold text-slate-900 dark:text-white truncate">
@@ -135,20 +129,13 @@ export const RecentScansList: React.FC<RecentScansListProps> = ({
               className="py-2.5 flex items-center justify-between text-xs hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer rounded-xl px-2 transition-colors"
             >
               <div className="flex items-center space-x-3 min-w-0 pr-2">
-                <div className="w-8 h-10 bg-slate-100 dark:bg-slate-700 rounded overflow-hidden flex-shrink-0 flex items-center justify-center border border-slate-200 dark:border-slate-600">
-                  {book.coverUrl ? (
-                    <img
-                      src={book.coverUrl}
-                      alt={book.title}
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).style.display = 'none';
-                      }}
-                    />
-                  ) : (
-                    <BookOpen className="w-4 h-4 text-slate-400" />
-                  )}
-                </div>
+                <BookCover
+                  title={book.title}
+                  authors={book.authors}
+                  coverUrl={book.coverUrl}
+                  variant="compact"
+                  className="w-8 h-11 flex-shrink-0"
+                />
 
                 <div className="min-w-0 flex-1">
                   <div className="font-semibold text-slate-900 dark:text-white truncate">

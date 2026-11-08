@@ -7,7 +7,6 @@ import {
   Save,
   Calendar,
   Building,
-  BookOpen,
   Hash,
   FileText,
   Copy,
@@ -16,6 +15,7 @@ import {
   Minus,
   AlertCircle,
 } from 'lucide-react';
+import { BookCover } from './BookCover';
 import { formatIsbn, isValidIsbn, normalizeIsbn } from '../utils/isbn';
 import { copiesLabel, findBookByIsbn, findOtherEditions, getCopies } from '../utils/bookMatching';
 
@@ -184,25 +184,17 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
 
           {/* Cover & Basic Info Header */}
           <div className="flex gap-4 items-start">
-            <div className="w-24 h-36 flex-shrink-0 bg-slate-100 dark:bg-slate-700 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-600 shadow-sm flex items-center justify-center">
-              {book.coverUrl ? (
-                <img
-                  src={book.coverUrl}
-                  alt={book.title}
-                  className="w-full h-full object-cover"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = 'none';
-                  }}
-                />
-              ) : (
-                <BookOpen className="w-8 h-8 text-slate-400" />
-              )}
-            </div>
+            <BookCover
+              title={book.title}
+              authors={book.authors}
+              coverUrl={book.coverUrl}
+              className="w-24 h-36 flex-shrink-0"
+            />
 
             <div className="flex-1 min-w-0">
               {!isEditing ? (
                 <>
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-white leading-tight mb-1">
+                  <h3 className="text-xl font-semibold text-slate-900 dark:text-white leading-tight mb-1">
                     {book.title}
                   </h3>
                   <p className="text-sm font-medium text-slate-600 dark:text-slate-300 mb-2">

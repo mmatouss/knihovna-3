@@ -41,15 +41,18 @@ function isValidIsbn13(isbn: string): boolean {
 }
 
 /**
- * Formats clean ISBN into readable string (e.g., 978-80-xxx-xxxx-x or standard hyphenated form).
+ * Zobrazí ISBN čitelněji: odděluje předponu (978/979) a kontrolní číslici,
+ * např. 978-802571234-4. Přesné dělení na skupinu, nakladatele a titul
+ * záleží na tabulce rozsahů ISBN, proto ho nehádáme (dřívější pevné
+ * dělení dávalo chybné výsledky, např. 978-31-61484-10-0).
  */
 export function formatIsbn(isbn: string): string {
   const clean = normalizeIsbn(isbn);
   if (clean.length === 13) {
-    return `${clean.slice(0, 3)}-${clean.slice(3, 5)}-${clean.slice(5, 10)}-${clean.slice(10, 12)}-${clean.slice(12)}`;
+    return `${clean.slice(0, 3)}-${clean.slice(3, 12)}-${clean.slice(12)}`;
   }
   if (clean.length === 10) {
-    return `${clean.slice(0, 1)}-${clean.slice(1, 4)}-${clean.slice(4, 9)}-${clean.slice(9)}`;
+    return `${clean.slice(0, 9)}-${clean.slice(9)}`;
   }
   return isbn;
 }
