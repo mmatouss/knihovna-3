@@ -85,3 +85,24 @@ export function copiesLabel(count: number): string {
   if (count >= 2 && count <= 4) return `${count} výtisky`;
   return `${count} výtisků`;
 }
+
+const LANGUAGE_NAMES: Record<string, string> = {
+  cs: 'čeština',
+  sk: 'slovenština',
+  en: 'angličtina',
+  de: 'němčina',
+  fr: 'francouzština',
+  es: 'španělština',
+  it: 'italština',
+  pl: 'polština',
+  ru: 'ruština',
+  uk: 'ukrajinština',
+  hu: 'maďarština',
+  la: 'latina',
+};
+
+/** Český název jazyka z kódu („cs“ → „čeština“); neznámý kód vrátí tak, jak je. */
+export function languageName(code?: string): string {
+  if (!code) return '';
+  return LANGUAGE_NAMES[code.toLowerCase()] ?? code;
+}

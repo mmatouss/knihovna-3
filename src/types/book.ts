@@ -10,6 +10,10 @@ export interface Book {
   coverUrl?: string;
   pageCount?: number;
   categories?: string[];
+  /** Jazyk knihy jako kód ISO 639-1, např. „cs“, „en“. */
+  language?: string;
+  /** Odkud jsou údaje, např. „Obálky knih, Google Books“. */
+  source?: string;
   addedAt: string;
   notes?: string;
   /** Označení vydání, např. „2. vydání“ nebo „brožované“. */
