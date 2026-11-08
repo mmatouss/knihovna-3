@@ -28,7 +28,8 @@ export const BookList: React.FC<BookListProps> = ({
       return (
         b.title.toLowerCase().includes(q) ||
         b.authors.some((a) => a.toLowerCase().includes(q)) ||
-        b.isbn.toLowerCase().includes(q) ||
+        (b.isbn && b.isbn.toLowerCase().includes(q.replace(/[\s-]/g, ''))) ||
+        (!b.isbn && 'bez isbn'.includes(q)) ||
         (b.publisher && b.publisher.toLowerCase().includes(q))
       );
     })
@@ -226,10 +227,16 @@ export const BookList: React.FC<BookListProps> = ({
                 <p className="text-[11px] text-slate-600 dark:text-slate-400 truncate mt-0.5">
                   {book.authors.join(', ')}
                 </p>
-                <div className="flex items-center space-x-1 mt-1 text-[10px] font-mono text-indigo-600 dark:text-indigo-400">
-                  <Hash className="w-3 h-3 text-slate-400" />
-                  <span>{formatIsbn(book.isbn)}</span>
-                </div>
+                {book.isbn ? (
+                  <div className="flex items-center space-x-1 mt-1 text-[10px] font-mono text-indigo-600 dark:text-indigo-400">
+                    <Hash className="w-3 h-3 text-slate-400" />
+                    <span>{formatIsbn(book.isbn)}</span>
+                  </div>
+                ) : (
+                  <div className="inline-flex mt-1 px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-[10px] font-medium text-slate-500 dark:text-slate-300">
+                    Bez ISBN{book.publishedDate ? ` · ${book.publishedDate}` : ''}
+                  </div>
+                )}
               </div>
             </div>
           ))}

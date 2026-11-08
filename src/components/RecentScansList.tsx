@@ -59,7 +59,8 @@ export const RecentScansList: React.FC<RecentScansListProps> = ({
       <div className="divide-y divide-slate-100 dark:divide-slate-700/60">
         {scanHistory.length > 0 ? (
           scanHistory.slice(0, 5).map((record) => {
-            const matchedBook = books.find((b) => b.id === record.bookId) || books.find((b) => b.isbn === record.isbn);
+            const matchedBook = books.find((b) => b.id === record.bookId) ||
+              (record.isbn ? books.find((b) => b.isbn === record.isbn) : undefined);
             const timeStr = new Date(record.scannedAt).toLocaleTimeString('cs-CZ', {
               hour: '2-digit',
               minute: '2-digit',
@@ -96,7 +97,7 @@ export const RecentScansList: React.FC<RecentScansListProps> = ({
                       {matchedBook?.title || record.bookTitle || `ISBN ${formatIsbn(record.isbn)}`}
                     </div>
                     <div className="flex items-center space-x-2 text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
-                      <span className="font-mono">{formatIsbn(record.isbn)}</span>
+                      <span className="font-mono">{record.isbn ? formatIsbn(record.isbn) : 'Bez ISBN'}</span>
                       <span>•</span>
                       <span className="flex items-center">
                         <Clock className="w-3 h-3 mr-0.5 inline" />

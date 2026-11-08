@@ -12,7 +12,7 @@ export function exportBooksToCsv(books: Book[]): void {
 
   const rows = books.map((book) => [
     `"${(book.isbn || '').replace(/"/g, '""')}"`,
-    `"${formatIsbn(book.isbn).replace(/"/g, '""')}"`,
+    `"${(book.isbn ? formatIsbn(book.isbn) : 'Bez ISBN').replace(/"/g, '""')}"`,
     `"${(book.title || '').replace(/"/g, '""')}"`,
     `"${(book.authors?.join(', ') || '').replace(/"/g, '""')}"`,
     `"${(book.publisher || '').replace(/"/g, '""')}"`,
