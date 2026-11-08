@@ -1,5 +1,6 @@
 import type { Book } from '../types/book';
 import { formatIsbn } from './isbn';
+import { getCopies } from './bookMatching';
 
 /**
  * Converts a list of books into a downloadable CSV file.
@@ -8,7 +9,7 @@ import { formatIsbn } from './isbn';
 export function exportBooksToCsv(books: Book[]): void {
   if (books.length === 0) return;
 
-  const headers = ['ISBN', 'Formátované ISBN', 'Název', 'Autor(i)', 'Nakladatelství', 'Rok vydání', 'Poznámka', 'Datum přidání'];
+  const headers = ['ISBN', 'Formátované ISBN', 'Název', 'Autor(i)', 'Nakladatelství', 'Rok vydání', 'Vydání', 'Počet stran', 'Počet výtisků', 'Poznámka', 'Datum přidání'];
 
   const rows = books.map((book) => [
     `"${(book.isbn || '').replace(/"/g, '""')}"`,
@@ -17,6 +18,9 @@ export function exportBooksToCsv(books: Book[]): void {
     `"${(book.authors?.join(', ') || '').replace(/"/g, '""')}"`,
     `"${(book.publisher || '').replace(/"/g, '""')}"`,
     `"${(book.publishedDate || '').replace(/"/g, '""')}"`,
+    `"${(book.edition || '').replace(/"/g, '""')}"`,
+    `"${book.pageCount ?? ''}"`,
+    `"${getCopies(book)}"`,
     `"${(book.notes || '').replace(/"/g, '""')}"`,
     `"${new Date(book.addedAt).toLocaleDateString('cs-CZ')}"`,
   ]);

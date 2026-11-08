@@ -8,19 +8,30 @@ import { BookList } from './components/BookList';
 import { BookDetailModal } from './components/BookDetailModal';
 import { RecentScansList } from './components/RecentScansList';
 import { ManualBookForm } from './components/ManualBookForm';
+import { copiesLabel, findBookByIsbn, findOtherEditions, getCopies } from './utils/bookMatching';
 import { Camera, Keyboard, Library, CheckCircle2, AlertCircle, BookOpen, Sparkles } from 'lucide-react';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<ScanMode>('camera');
-  const { books, scanHistory, addBook, updateBook, deleteBook, clearAllBooks, clearScanHistory } = useBookStorage();
+  const {
+    books,
+    scanHistory,
+    addBook,
+    updateBook,
+    deleteBook,
+    restoreBook,
+    recordScan,
+    clearAllBooks,
+    clearScanHistory,
+  } = useBookStorage();
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
-  // Otevřít detail knihy rovnou v úpravách (když se údaje o knize nenašly).
-  const [editOnOpen, setEditOnOpen] = useState(false);
+  // Jak otevřít detail: rovnou v úpravách (údaje se nenašly) / s nabídkou dalšího výtisku.
+  const [modalMode, setModalMode] = useState<{ edit: boolean; duplicate: boolean }>({ edit: false, duplicate: false });
   // Předvyplnění ručního zadání (např. částečně přečtené číslo ze skeneru).
   const [manualPrefill, setManualPrefill] = useState<{ value?: string; note?: string; n: number }>({ n: 0 });
 
-  const openBook = (book: Book, edit = false) => {
-    setEditOnOpen(edit);
+  const openBook = (book: Book, mode: { edit?: boolean; duplicate?: boolean } = {}) => {
+    setModalMode({ edit: Boolean(mode.edit), duplicate: Boolean(mode.duplicate) });
     setSelectedBook(book);
   };
 
@@ -35,13 +46,37 @@ export function App() {
     setActiveTab('manual');
   };
   const [isLoading, setIsLoading] = useState(false);
-  const [notification, setNotification] = useState<{ type: 'success' | 'warning' | 'error'; message: string } | null>(null);
+  const [notification, setNotification] = useState<{
+    type: 'success' | 'warning' | 'error';
+    message: string;
+    action?: { label: string; onClick: () => void };
+  } | null>(null);
 
-  const showToast = (type: 'success' | 'warning' | 'error', message: string) => {
-    setNotification({ type, message });
+  const showToast = (
+    type: 'success' | 'warning' | 'error',
+    message: string,
+    action?: { label: string; onClick: () => void }
+  ) => {
+    setNotification({ type, message, action });
     setTimeout(() => {
       setNotification((prev) => (prev?.message === message ? null : prev));
-    }, 3500);
+    }, action ? 7000 : 3500);
+  };
+
+  // Smazání knihy s možností vrátit to zpět.
+  const handleDeleteBook = (id: string) => {
+    const deleted = books.find((b) => b.id === id);
+    deleteBook(id);
+    setSelectedBook(null);
+    if (deleted) {
+      showToast('success', `Kniha „${deleted.title}“ byla smazána.`, {
+        label: 'Vrátit zpět',
+        onClick: () => {
+          restoreBook(deleted);
+          setNotification(null);
+        },
+      });
+    }
   };
 
   const handleIsbnDetected = useCallback(
@@ -50,16 +85,35 @@ export function App() {
       setIsLoading(true);
 
       try {
+        // Duplikát: knihu se stejným ISBN už máme – nabídneme přidání dalšího výtisku
+        // (a zbytečně ji nehledáme v online databázích).
+        const existing = findBookByIsbn(isbn, books);
+        if (existing) {
+          recordScan(existing.isbn, 'duplicate', existing);
+          showToast('warning', `„${existing.title}“ už v knihovně je (${copiesLabel(getCopies(existing))}).`);
+          openBook(existing, { duplicate: true });
+          return;
+        }
+
         const fetchedBook = await fetchBookByIsbn(isbn);
         const result = addBook(fetchedBook);
+        const otherEditions = result.isDuplicate ? [] : findOtherEditions(fetchedBook, books);
 
         if (result.isDuplicate) {
           showToast('warning', `Kniha s ISBN ${isbn} ("${result.book.title}") už v knihovně je.`);
-          openBook(result.book);
+          openBook(result.book, { duplicate: true });
         } else if (fetchedBook.metadataMissing) {
           // Kniha není v žádné databázi – necháme knihovníka doplnit údaje ručně.
           showToast('warning', `Kniha s ISBN ${isbn} nebyla v databázích nalezena. Doplňte název a autora.`);
-          openBook(fetchedBook, true);
+          openBook(fetchedBook, { edit: true });
+        } else if (otherEditions.length > 0) {
+          // Stejná kniha, ale jiné vydání (jiné ISBN) – uložíme jako samostatný záznam.
+          const years = otherEditions.map((b) => b.publishedDate || '?').join(', ');
+          showToast(
+            'success',
+            `Přidáno: "${fetchedBook.title}" – v knihovně je i jiné vydání (${years}).`,
+            { label: 'Zobrazit', onClick: () => { openBook(fetchedBook); setNotification(null); } }
+          );
         } else {
           showToast('success', `Přidáno a uloženo: "${fetchedBook.title}"`);
         }
@@ -70,7 +124,7 @@ export function App() {
         setIsLoading(false);
       }
     },
-    [addBook, isLoading]
+    [addBook, books, recordScan, isLoading]
   );
 
   return (
@@ -123,6 +177,15 @@ export function App() {
               <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0" />
             )}
             <p className="text-xs font-medium leading-tight flex-1">{notification.message}</p>
+            {notification.action && (
+              <button
+                type="button"
+                onClick={notification.action.onClick}
+                className="px-2.5 py-1 rounded-lg bg-white/20 hover:bg-white/30 text-xs font-bold whitespace-nowrap"
+              >
+                {notification.action.label}
+              </button>
+            )}
           </div>
         )}
 
@@ -283,18 +346,17 @@ export function App() {
       <BookDetailModal
         key={selectedBook?.id ?? 'none'}
         book={selectedBook}
-        startEditing={editOnOpen}
+        books={books}
+        onSelectBook={(book) => openBook(book)}
+        startEditing={modalMode.edit}
+        isDuplicateScan={modalMode.duplicate}
         onClose={() => setSelectedBook(null)}
         onUpdate={(updated) => {
           updateBook(updated);
           setSelectedBook(updated);
           showToast('success', 'Změny byly uloženy.');
         }}
-        onDelete={(id) => {
-          deleteBook(id);
-          setSelectedBook(null);
-          showToast('success', 'Kniha byla smazána.');
-        }}
+        onDelete={handleDeleteBook}
       />
     </div>
   );

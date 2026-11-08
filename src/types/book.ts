@@ -12,6 +12,10 @@ export interface Book {
   categories?: string[];
   addedAt: string;
   notes?: string;
+  /** Označení vydání, např. „2. vydání“ nebo „brožované“. */
+  edition?: string;
+  /** Počet výtisků v knihovně (chybí = 1). */
+  copies?: number;
   /** Údaje o knize se nepodařilo najít v databázích – je potřeba je doplnit ručně. */
   metadataMissing?: boolean;
 }
