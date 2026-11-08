@@ -1,5 +1,7 @@
 import type { Worker } from 'tesseract.js';
-import { isValidIsbn } from '../utils/isbn';
+import { BrowserMultiFormatReader } from '@zxing/browser';
+import { BarcodeFormat, DecodeHintType } from '@zxing/library';
+import { isValidIsbn, normalizeIsbn } from '../utils/isbn';
 
 /**
  * Čtení vytištěného čísla ISBN z obrázku (OCR) pomocí Tesseract.js.
@@ -55,7 +57,7 @@ export function preloadIsbnOcr(): void {
 export function extractIsbnFromText(text: string): string | null {
   const upper = text.toUpperCase().replace(/[–—]/g, '-');
   // Úseky číslic, mezi kterými mohou být pomlčky nebo mezery (ne konce řádků).
-  const runs = upper.match(/[0-9X](?:[ -]{0,2}[0-9X]){8,20}/g) ?? [];
+  const runs = upper.match(/[0-9X](?:[ -]{0,3}[0-9X]){8,20}/g) ?? [];
   const digitRuns = runs.map((run) => run.replace(/[^0-9X]/g, ''));
 
   for (const digits of digitRuns) {
@@ -89,7 +91,7 @@ export function extractIsbnFromText(text: string): string | null {
  */
 export function guessIsbnFromText(text: string): string | null {
   const upper = text.toUpperCase().replace(/[–—]/g, '-');
-  const runs = (upper.match(/[0-9X](?:[ -]{0,2}[0-9X]){8,20}/g) ?? []).map((run) =>
+  const runs = (upper.match(/[0-9X](?:[ -]{0,3}[0-9X]){8,20}/g) ?? []).map((run) =>
     run.replace(/[^0-9X]/g, '')
   );
   for (const digits of runs) {
@@ -100,27 +102,82 @@ export function guessIsbnFromText(text: string): string | null {
 }
 
 /**
- * Připraví obrázek pro OCR: převod na odstíny šedi a roztažení kontrastu.
- * Malé obrázky zvětší, aby měly číslice dost pixelů.
+ * Varianty úpravy obrázku. Tesseract je citlivý na velikost písma a kontrast,
+ * proto zkoušíme víc variant: šířka obrázku v px a jestli převést na čistě
+ * černobílý (práh podle Otsua).
  */
-function prepareCanvas(source: CanvasImageSource, width: number, height: number): HTMLCanvasElement {
-  const MIN_WIDTH = 1200;
-  const MAX_WIDTH = 2000;
-  let scale = 1;
-  if (width < MIN_WIDTH) scale = MIN_WIDTH / width;
-  if (width > MAX_WIDTH) scale = MAX_WIDTH / width;
+export interface OcrVariant {
+  width: number;
+  blackWhite: boolean;
+}
+
+export const OCR_VARIANTS: OcrVariant[] = [
+  { width: 1000, blackWhite: false },
+  { width: 1000, blackWhite: true },
+  { width: 1400, blackWhite: true },
+  { width: 700, blackWhite: false },
+  { width: 2000, blackWhite: false },
+  { width: 1400, blackWhite: false },
+  { width: 700, blackWhite: true },
+  { width: 2000, blackWhite: true },
+];
+
+/** Bílý okraj kolem obrázku – Tesseract špatně čte text, který sahá až k okraji. */
+const PADDING = 30;
+
+/** Najde práh pro převod na černobílou (Otsuova metoda). */
+function otsuThreshold(histogram: number[], total: number): number {
+  let sum = 0;
+  for (let t = 0; t < 256; t++) sum += t * histogram[t];
+  let sumBackground = 0;
+  let weightBackground = 0;
+  let best = 0;
+  let threshold = 128;
+  for (let t = 0; t < 256; t++) {
+    weightBackground += histogram[t];
+    if (weightBackground === 0) continue;
+    const weightForeground = total - weightBackground;
+    if (weightForeground === 0) break;
+    sumBackground += t * histogram[t];
+    const meanBackground = sumBackground / weightBackground;
+    const meanForeground = (sum - sumBackground) / weightForeground;
+    const between = weightBackground * weightForeground * (meanBackground - meanForeground) ** 2;
+    if (between > best) {
+      best = between;
+      threshold = t;
+    }
+  }
+  return threshold;
+}
+
+/**
+ * Připraví obrázek pro OCR: změna velikosti, odstíny šedi, roztažení kontrastu,
+ * volitelně převod na černobílou a bílý okraj.
+ */
+function prepareCanvas(
+  source: CanvasImageSource,
+  width: number,
+  height: number,
+  variant: OcrVariant
+): HTMLCanvasElement {
+  const scale = variant.width / width;
+  const w = Math.max(1, Math.round(width * scale));
+  const h = Math.max(1, Math.round(height * scale));
 
   const canvas = document.createElement('canvas');
-  canvas.width = Math.round(width * scale);
-  canvas.height = Math.round(height * scale);
+  canvas.width = w + 2 * PADDING;
+  canvas.height = h + 2 * PADDING;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (!ctx) return canvas;
 
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+  ctx.drawImage(source, PADDING, PADDING, w, h);
 
-  const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const img = ctx.getImageData(PADDING, PADDING, w, h);
   const data = img.data;
+  const histogram = new Array<number>(256).fill(0);
   let min = 255;
   let max = 0;
   for (let i = 0; i < data.length; i += 4) {
@@ -132,29 +189,67 @@ function prepareCanvas(source: CanvasImageSource, width: number, height: number)
   const range = Math.max(1, max - min);
   for (let i = 0; i < data.length; i += 4) {
     const v = Math.round(((data[i] - min) * 255) / range);
+    data[i] = v;
+    histogram[v]++;
+  }
+  const threshold = variant.blackWhite ? otsuThreshold(histogram, data.length / 4) : -1;
+  for (let i = 0; i < data.length; i += 4) {
+    const v = variant.blackWhite ? (data[i] > threshold ? 255 : 0) : data[i];
     data[i] = data[i + 1] = data[i + 2] = v;
   }
-  ctx.putImageData(img, 0, 0);
+  ctx.putImageData(img, PADDING, PADDING);
   return canvas;
 }
 
-/** Přečte ISBN z obrázku (snímek z kamery, fotka…). */
+/**
+ * Přečte ISBN z obrázku (snímek z kamery, fotka…).
+ * Zkouší postupně varianty úpravy obrázku, dokud nenajde platné ISBN.
+ */
 export async function readIsbnFromImage(
   source: CanvasImageSource,
   width: number,
-  height: number
+  height: number,
+  variants: OcrVariant[] = OCR_VARIANTS
 ): Promise<IsbnReadResult> {
   const worker = await getWorker();
-  const canvas = prepareCanvas(source, width, height);
-  const { data } = await worker.recognize(canvas);
-  const isbn = extractIsbnFromText(data.text);
-  return { isbn, guess: isbn ? null : guessIsbnFromText(data.text) };
+  let guess: string | null = null;
+  for (const variant of variants) {
+    const canvas = prepareCanvas(source, width, height, variant);
+    const { data } = await worker.recognize(canvas);
+    const isbn = extractIsbnFromText(data.text);
+    if (isbn) return { isbn, guess: null };
+    guess = guess ?? guessIsbnFromText(data.text);
+  }
+  return { isbn: null, guess };
 }
 
-/** Přečte ISBN z nahraného souboru s fotkou. */
+/** Zkusí na obrázku najít čárový kód EAN-13 s ISBN. */
+function readBarcodeFromImage(source: CanvasImageSource, width: number, height: number): string | null {
+  const scale = Math.min(1, 2000 / width);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(width * scale));
+  canvas.height = Math.max(1, Math.round(height * scale));
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return null;
+  ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+
+  const hints = new Map<DecodeHintType, unknown>();
+  hints.set(DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.EAN_13]);
+  hints.set(DecodeHintType.TRY_HARDER, true);
+  try {
+    const code = normalizeIsbn(new BrowserMultiFormatReader(hints).decodeFromCanvas(canvas).getText());
+    return /^97[89]\d{10}$/.test(code) && isValidIsbn(code) ? code : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Přečte ISBN z nahraného souboru s fotkou (nejdřív čárový kód, pak vytištěné číslo). */
 export async function readIsbnFromFile(file: File): Promise<IsbnReadResult> {
   const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
   try {
+    const fromBarcode = readBarcodeFromImage(bitmap, bitmap.width, bitmap.height);
+    if (fromBarcode) return { isbn: fromBarcode, guess: null };
     return await readIsbnFromImage(bitmap, bitmap.width, bitmap.height);
   } finally {
     bitmap.close();

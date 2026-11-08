@@ -3,11 +3,16 @@ import { BrowserMultiFormatReader } from '@zxing/browser';
 import { BarcodeFormat, DecodeHintType } from '@zxing/library';
 import { Camera, SwitchCamera, AlertTriangle, RefreshCw, Zap, ZapOff, ScanText, Keyboard } from 'lucide-react';
 import { normalizeIsbn } from '../utils/isbn';
-import { preloadIsbnOcr, readIsbnFromImage } from '../services/isbnOcr';
+import { OCR_VARIANTS, preloadIsbnOcr, readIsbnFromImage } from '../services/isbnOcr';
 
 interface BarcodeScannerProps {
   onScanSuccess: (decodedText: string) => void;
   isScanningActive: boolean;
+  /**
+   * Dočasně nečíst kódy (např. je otevřený detail knihy nebo se kniha vyhledává).
+   * Kamera přitom běží dál, takže po zavření detailu se hned pokračuje.
+   */
+  isPaused?: boolean;
   /**
    * Přepne na ruční zadání ISBN (když čtení nejde, např. kvůli skvrně).
    * `prefill` je částečně přečtené číslo, které stačí opravit.
@@ -25,6 +30,9 @@ const SCAN_REGION_HEIGHT = 0.6;
 
 // Max. šířka výřezu v pixelech – větší obraz by zbytečně zpomaloval dekódování.
 const MAX_SCAN_WIDTH = 1280;
+
+// Pauza mezi automatickými pokusy přečíst vytištěné číslo (OCR je pomalejší).
+const AUTO_OCR_PAUSE_MS = 300;
 
 function createReader() {
   const hints = new Map<DecodeHintType, unknown>();
@@ -76,11 +84,19 @@ function captureScanRegion(
   return true;
 }
 
-export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, isScanningActive, onManualEntry }) => {
+export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, isScanningActive, isPaused = false, onManualEntry }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const onScanSuccessRef = useRef(onScanSuccess);
   const lastScannedRef = useRef<{ code: string; time: number } | null>(null);
+  // Když běží ruční čtení tlačítkem, automatické čtení čísla počká.
+  const manualOcrRunningRef = useRef(false);
+  const isPausedRef = useRef(isPaused);
+  useEffect(() => {
+    isPausedRef.current = isPaused;
+    // Po pauze (zavření detailu knihy) nehlásit znovu kód, který je pořád v záběru.
+    if (!isPaused && lastScannedRef.current) lastScannedRef.current.time = Date.now();
+  }, [isPaused]);
 
   const [cameras, setCameras] = useState<Array<{ id: string; label: string }>>([]);
   // Prázdný řetězec = výchozí zadní kamera (facingMode: environment).
@@ -109,13 +125,16 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
     // Only process valid ISBN lengths (10 or 13 digits)
     if (clean.length !== 10 && clean.length !== 13) return;
 
-    // Prevent continuous duplicate triggers within a 2.5s window
+    // Stejný kód, který je pořád v záběru, nehlásíme znovu. Znovu se načte až poté,
+    // co aspoň 5 s nebyl vidět (čas se obnovuje při každém dalším přečtení).
     const now = Date.now();
+    if (isPausedRef.current) return;
     if (
       lastScannedRef.current &&
       lastScannedRef.current.code === clean &&
-      now - lastScannedRef.current.time < 2500
+      now - lastScannedRef.current.time < 5000
     ) {
+      lastScannedRef.current.time = now;
       return;
     }
 
@@ -136,6 +155,7 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
 
     let cancelled = false;
     let scanTimer: ReturnType<typeof setTimeout> | null = null;
+    let ocrTimer: ReturnType<typeof setTimeout> | null = null;
     const reader = createReader();
     const canvas = document.createElement('canvas');
     const videoEl = videoRef.current;
@@ -143,7 +163,12 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
     const scanLoop = () => {
       if (cancelled) return;
       const video = videoEl;
-      if (video && video.readyState >= video.HAVE_CURRENT_DATA && captureScanRegion(video, canvas)) {
+      if (
+        video &&
+        !isPausedRef.current &&
+        video.readyState >= video.HAVE_CURRENT_DATA &&
+        captureScanRegion(video, canvas)
+      ) {
         try {
           const result = reader.decodeFromCanvas(canvas);
           handleSuccess(result.getText());
@@ -152,6 +177,39 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
         }
       }
       scanTimer = setTimeout(scanLoop, SCAN_INTERVAL_MS);
+    };
+
+    // Automatické čtení vytištěného čísla ISBN (bez čárového kódu) na pozadí.
+    // Každý pokus použije jinou úpravu obrázku, takže se během pár sekund
+    // vystřídají všechny varianty. Přijme se jen číslo s platnou kontrolní číslicí.
+    let ocrVariantIndex = 0;
+    let ocrFailures = 0;
+    const ocrLoop = async () => {
+      if (cancelled) return;
+      const video = videoEl;
+      let delay = AUTO_OCR_PAUSE_MS;
+      if (
+        video &&
+        !manualOcrRunningRef.current &&
+        !isPausedRef.current &&
+        video.readyState >= video.HAVE_CURRENT_DATA
+      ) {
+        const ocrCanvas = document.createElement('canvas');
+        if (captureScanRegion(video, ocrCanvas, SCAN_REGION_WIDTH, SCAN_REGION_HEIGHT, 2000)) {
+          const variant = OCR_VARIANTS[ocrVariantIndex++ % OCR_VARIANTS.length];
+          try {
+            const result = await readIsbnFromImage(ocrCanvas, ocrCanvas.width, ocrCanvas.height, [variant]);
+            ocrFailures = 0;
+            if (result.isbn && !cancelled) handleSuccess(result.isbn);
+          } catch (err) {
+            // Např. se nepodařilo stáhnout Tesseract (bez internetu) – zkusíme později.
+            console.warn('Automatic OCR failed', err);
+            ocrFailures++;
+            delay = Math.min(60000, 5000 * ocrFailures);
+          }
+        }
+      }
+      if (!cancelled) ocrTimer = setTimeout(ocrLoop, delay);
     };
 
     async function start() {
@@ -222,6 +280,7 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
         if (!cancelled) {
           setIsInitializing(false);
           scanLoop();
+          ocrLoop();
         }
       } catch (err: unknown) {
         if (cancelled) return;
@@ -243,6 +302,7 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
     return () => {
       cancelled = true;
       if (scanTimer) clearTimeout(scanTimer);
+      if (ocrTimer) clearTimeout(ocrTimer);
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
       if (videoEl) videoEl.srcObject = null;
@@ -258,20 +318,26 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
   const readPrintedIsbn = async () => {
     const video = videoRef.current;
     if (!video || isReadingText) return;
+    manualOcrRunningRef.current = true;
     setIsReadingText(true);
     setTextReadError(null);
     setTextReadGuess(null);
 
     try {
-      const attempts: Array<[number, number]> = [
-        [SCAN_REGION_WIDTH, SCAN_REGION_HEIGHT], // oblast kolem rámečku
-        [1, 10], // celý viditelný obraz (výška se omezí na viditelnou část)
+      const attempts: Array<[number, number, number]> = [
+        [SCAN_REGION_WIDTH, SCAN_REGION_HEIGHT, 4], // oblast kolem rámečku, 4 varianty úprav
+        [1, 10, 2], // celý viditelný obraz (výška se omezí na viditelnou část), 2 varianty
       ];
       let guess: string | null = null;
-      for (const [w, h] of attempts) {
+      for (const [w, h, variantCount] of attempts) {
         const canvas = document.createElement('canvas');
         if (!captureScanRegion(video, canvas, w, h, 4000)) continue;
-        const result = await readIsbnFromImage(canvas, canvas.width, canvas.height);
+        const result = await readIsbnFromImage(
+          canvas,
+          canvas.width,
+          canvas.height,
+          OCR_VARIANTS.slice(0, variantCount)
+        );
         if (result.isbn) {
           handleSuccess(result.isbn);
           return;
@@ -288,6 +354,7 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
       console.error('OCR failed', err);
       setTextReadError('Čtení textu selhalo. Zkontrolujte připojení k internetu a zkuste znovu.');
     } finally {
+      manualOcrRunningRef.current = false;
       setIsReadingText(false);
     }
   };
@@ -444,7 +511,7 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
             <span>{isReadingText ? 'Čtu číslo…' : 'Přečíst vytištěné číslo ISBN'}</span>
           </button>
           <p className="mt-1.5 text-[10px] text-slate-400 text-center">
-            Pro knihy bez čárového kódu – stačí mít číslo ISBN v rámečku.
+            Vytištěné číslo ISBN se zkouší číst i samo. Když to nejde, zmáčkněte tlačítko.
           </p>
           {onManualEntry && (
             <button
