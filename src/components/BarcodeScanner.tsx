@@ -14,6 +14,11 @@ interface BarcodeScannerProps {
    */
   isPaused?: boolean;
   /**
+   * Za jak dlouho (ms) může být stejný kód hlášen znovu, když mezitím zmizel
+   * ze záběru. V rychlém skenování kratší, aby šlo skenovat víc stejných výtisků.
+   */
+  repeatDelayMs?: number;
+  /**
    * Přepne na ruční zadání ISBN (když čtení nejde, např. kvůli skvrně).
    * `prefill` je částečně přečtené číslo, které stačí opravit.
    */
@@ -84,7 +89,7 @@ function captureScanRegion(
   return true;
 }
 
-export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, isScanningActive, isPaused = false, onManualEntry }) => {
+export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, isScanningActive, isPaused = false, repeatDelayMs = 5000, onManualEntry }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const onScanSuccessRef = useRef(onScanSuccess);
@@ -92,6 +97,10 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
   // Když běží ruční čtení tlačítkem, automatické čtení čísla počká.
   const manualOcrRunningRef = useRef(false);
   const isPausedRef = useRef(isPaused);
+  const repeatDelayRef = useRef(repeatDelayMs);
+  useEffect(() => {
+    repeatDelayRef.current = repeatDelayMs;
+  }, [repeatDelayMs]);
   useEffect(() => {
     isPausedRef.current = isPaused;
     // Po pauze (zavření detailu knihy) nehlásit znovu kód, který je pořád v záběru.
@@ -126,13 +135,13 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
     if (clean.length !== 10 && clean.length !== 13) return;
 
     // Stejný kód, který je pořád v záběru, nehlásíme znovu. Znovu se načte až poté,
-    // co aspoň 5 s nebyl vidět (čas se obnovuje při každém dalším přečtení).
+    // co nebyl vidět aspoň `repeatDelayMs` (výchozí 5 s) (čas se obnovuje při každém dalším přečtení).
     const now = Date.now();
     if (isPausedRef.current) return;
     if (
       lastScannedRef.current &&
       lastScannedRef.current.code === clean &&
-      now - lastScannedRef.current.time < 5000
+      now - lastScannedRef.current.time < repeatDelayRef.current
     ) {
       lastScannedRef.current.time = now;
       return;

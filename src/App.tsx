@@ -1,5 +1,5 @@
-import { useState, useCallback } from 'react';
-import type { Book, ScanMode } from './types/book';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import type { BatchItem, Book, ScanMode } from './types/book';
 import { useBookStorage } from './hooks/useBookStorage';
 import { enrichBook, fetchBookByIsbn } from './services/bookApi';
 import { BarcodeScanner } from './components/BarcodeScanner';
@@ -8,6 +8,9 @@ import { BookList } from './components/BookList';
 import { BookDetailModal } from './components/BookDetailModal';
 import { RecentScansList } from './components/RecentScansList';
 import { ManualBookForm } from './components/ManualBookForm';
+import { BatchLiveBar, BatchSessionPanel } from './components/BatchSessionPanel';
+import { playFeedback, unlockAudio } from './utils/feedback';
+import { normalizeIsbn } from './utils/isbn';
 import { copiesLabel, findBookByIsbn, findOtherEditions, getCopies } from './utils/bookMatching';
 import { Camera, Keyboard, Library, CheckCircle2, AlertCircle } from 'lucide-react';
 
@@ -23,6 +26,8 @@ export function App() {
     recordScan,
     clearAllBooks,
     clearScanHistory,
+    insertBook,
+    adjustCopies,
   } = useBookStorage();
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
   // Jak otevřít detail: rovnou v úpravách (údaje se nenašly) / s nabídkou dalšího výtisku.
@@ -39,6 +44,135 @@ export function App() {
   const handleManualBookAdd = (book: Book) => {
     addBook(book);
     showToast('success', `Kniha bez ISBN uložena: "${book.title}"`);
+  };
+
+  // ---------------------------------------------------------------------
+  // Rychlé skenování: kniha za knihou, bez vyskakovacích oken, jen pípnutí.
+  // ---------------------------------------------------------------------
+  const readPref = (key: string, fallback: string) => {
+    try {
+      return localStorage.getItem(key) ?? fallback;
+    } catch {
+      return fallback;
+    }
+  };
+  const [batchMode, setBatchMode] = useState(() => readPref('knihovnik_batch_mode', '0') === '1');
+  const [duplicateMode, setDuplicateMode] = useState<'copy' | 'skip'>(() =>
+    readPref('knihovnik_batch_duplicates', 'copy') === 'skip' ? 'skip' : 'copy'
+  );
+  const [soundOn, setSoundOn] = useState(() => readPref('knihovnik_batch_sound', '1') === '1');
+  const [batchItems, setBatchItems] = useState<BatchItem[]>([]);
+
+  // Nastavení si pamatujeme v tomto zařízení.
+  useEffect(() => {
+    try {
+      localStorage.setItem('knihovnik_batch_mode', batchMode ? '1' : '0');
+      localStorage.setItem('knihovnik_batch_duplicates', duplicateMode);
+      localStorage.setItem('knihovnik_batch_sound', soundOn ? '1' : '0');
+    } catch {
+      /* úložiště nedostupné – nevadí */
+    }
+  }, [batchMode, duplicateMode, soundOn]);
+
+  // Prohlížeč povolí zvuk až po první akci uživatele (dotyk, klávesa).
+  useEffect(() => {
+    if (!batchMode) return;
+    const unlock = () => unlockAudio();
+    window.addEventListener('pointerdown', unlock, { once: true });
+    window.addEventListener('keydown', unlock, { once: true });
+    return () => {
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
+  }, [batchMode]);
+
+  // Aktuální seznam knih pro souběžná vyhledávání (stav Reactu se mění až po vykreslení).
+  const booksRef = useRef(books);
+  useEffect(() => {
+    booksRef.current = books;
+  }, [books]);
+  // Rozběhnutá vyhledávání podle ISBN – stejná kniha naskenovaná dvakrát rychle za sebou
+  // se nevyhledává dvakrát, druhý sken počká na první a přidá výtisk.
+  const pendingLookupsRef = useRef(new Map<string, Promise<Book | null>>());
+
+  const updateBatchItem = (id: string, patch: Partial<BatchItem>) =>
+    setBatchItems((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+
+  const handleBatchScan = async (isbn: string) => {
+    const clean = normalizeIsbn(isbn);
+    const itemId = `${clean}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    setBatchItems((prev) => [{ id: itemId, isbn: clean, status: 'pending', scannedAt: Date.now() }, ...prev]);
+
+    const bookInfo = (book: Book) => ({
+      bookId: book.id,
+      title: book.metadataMissing ? undefined : book.title,
+      authors: book.authors,
+      coverUrl: book.coverUrl,
+    });
+
+    // Kniha už v knihovně je → další výtisk, nebo přeskočit (podle nastavení).
+    const handleExisting = (book: Book) => {
+      if (duplicateMode === 'copy') {
+        adjustCopies(book.id, 1);
+        recordScan(book.isbn, 'duplicate', book);
+        updateBatchItem(itemId, { status: 'copy', ...bookInfo(book) });
+        playFeedback('copy', soundOn);
+      } else {
+        updateBatchItem(itemId, { status: 'skipped', ...bookInfo(book) });
+        playFeedback('warning', soundOn);
+      }
+    };
+
+    const existing = findBookByIsbn(clean, booksRef.current);
+    if (existing) {
+      handleExisting(existing);
+      return;
+    }
+
+    const inFlight = pendingLookupsRef.current.get(clean);
+    if (inFlight) {
+      const book = await inFlight;
+      if (book) handleExisting(book);
+      else updateBatchItem(itemId, { status: 'error' });
+      return;
+    }
+
+    const lookup = (async (): Promise<Book | null> => {
+      try {
+        const fetched = await fetchBookByIsbn(clean);
+        insertBook(fetched);
+        booksRef.current = [fetched, ...booksRef.current];
+        recordScan(clean, 'added', fetched);
+        updateBatchItem(itemId, { status: fetched.metadataMissing ? 'notFound' : 'added', ...bookInfo(fetched) });
+        playFeedback(fetched.metadataMissing ? 'warning' : 'added', soundOn);
+        return fetched;
+      } catch (err) {
+        console.error(err);
+        updateBatchItem(itemId, { status: 'error' });
+        playFeedback('error', soundOn);
+        return null;
+      } finally {
+        pendingLookupsRef.current.delete(clean);
+      }
+    })();
+    pendingLookupsRef.current.set(clean, lookup);
+    await lookup;
+  };
+
+  // Vrácení jedné akce z relace (smaže novou knihu / ubere výtisk).
+  const handleBatchUndo = (itemId: string) => {
+    const item = batchItems.find((i) => i.id === itemId);
+    if (!item || item.undone || !item.bookId) return;
+    if (item.status === 'copy') {
+      adjustCopies(item.bookId, -1);
+      updateBatchItem(itemId, { undone: true });
+    } else if (item.status === 'added' || item.status === 'notFound') {
+      const bookId = item.bookId;
+      deleteBook(bookId);
+      booksRef.current = booksRef.current.filter((b) => b.id !== bookId);
+      // Smazaná kniha → i její další výtisky z této relace jsou pryč.
+      setBatchItems((prev) => prev.map((i) => (i.bookId === bookId ? { ...i, undone: true } : i)));
+    }
   };
 
   const goToManualEntry = (value?: string, note?: string) => {
@@ -255,27 +389,73 @@ export function App() {
                 </p>
               </div>
 
+              {/* Přepínač rychlého skenování */}
+              <label className="w-full max-w-md mx-auto flex items-center justify-between gap-3 bg-white/90 dark:bg-slate-800/90 rounded-2xl p-3.5 border border-slate-200/80 dark:border-slate-700 cursor-pointer select-none">
+                <span>
+                  <span className="block text-sm font-semibold text-slate-900 dark:text-white">Rychlé skenování</span>
+                  <span className="block text-xs text-slate-500 dark:text-slate-400">
+                    Kniha za knihou bez vyskakovacích oken – jen pípnutí.
+                  </span>
+                </span>
+                <input
+                  type="checkbox"
+                  role="switch"
+                  className="sr-only peer"
+                  checked={batchMode}
+                  onChange={(e) => {
+                    if (e.target.checked) unlockAudio();
+                    setBatchMode(e.target.checked);
+                  }}
+                  aria-label="Rychlé skenování"
+                />
+                <span className="relative flex-shrink-0 w-11 h-6 rounded-full bg-slate-300 dark:bg-slate-600 peer-checked:bg-indigo-600 peer-focus-visible:ring-2 peer-focus-visible:ring-indigo-400 transition-colors after:absolute after:top-0.5 after:left-0.5 after:w-5 after:h-5 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:after:translate-x-5" />
+              </label>
+
+              {batchMode && <BatchLiveBar items={batchItems} onUndo={handleBatchUndo} />}
+
               <BarcodeScanner
-                onScanSuccess={handleIsbnDetected}
+                onScanSuccess={batchMode ? handleBatchScan : handleIsbnDetected}
                 isScanningActive={activeTab === 'camera'}
-                isPaused={selectedBook !== null || isLoading}
+                isPaused={selectedBook !== null || (!batchMode && isLoading)}
+                repeatDelayMs={batchMode ? 2000 : 5000}
                 onManualEntry={goToManualEntry}
               />
 
-              {isLoading && (
+              {batchMode && (
+                <BatchSessionPanel
+                  items={batchItems}
+                  duplicateMode={duplicateMode}
+                  onDuplicateModeChange={setDuplicateMode}
+                  soundOn={soundOn}
+                  onSoundChange={(on) => {
+                    if (on) unlockAudio();
+                    setSoundOn(on);
+                  }}
+                  onUndo={handleBatchUndo}
+                  onNewSession={() => setBatchItems([])}
+                  onOpenBook={(bookId, edit) => {
+                    const book = books.find((b) => b.id === bookId);
+                    if (book) openBook(book, { edit });
+                  }}
+                />
+              )}
+
+              {!batchMode && isLoading && (
                 <div className="flex items-center justify-center space-x-2 text-xs font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/50 p-3 rounded-2xl max-w-md mx-auto border border-indigo-100 dark:border-indigo-900">
                   <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
                   <span>Vyhledávám informace o knize v databázi...</span>
                 </div>
               )}
 
-              <RecentScansList
-                scanHistory={scanHistory}
-                books={books}
-                onSelectBook={(book) => openBook(book)}
-                onClearHistory={clearScanHistory}
-                onViewAll={() => setActiveTab('list')}
-              />
+              {!batchMode && (
+                <RecentScansList
+                  scanHistory={scanHistory}
+                  books={books}
+                  onSelectBook={(book) => openBook(book)}
+                  onClearHistory={clearScanHistory}
+                  onViewAll={() => setActiveTab('list')}
+                />
+              )}
             </div>
           )}
 

@@ -82,6 +82,21 @@ export function useBookStorage() {
     return { success: true, isDuplicate: false, book: newBook };
   };
 
+  /**
+   * Vloží knihu bez kontroly duplikátu (volající ji už udělal). Používá
+   * funkční aktualizaci, takže je bezpečná i při víc souběžných vyhledáváních.
+   */
+  const insertBook = (newBook: Book) => {
+    setBooks((prev) => (prev.some((b) => b.id === newBook.id) ? prev : [newBook, ...prev]));
+  };
+
+  /** Změní počet výtisků o `delta` (nejméně 1). Bezpečné při souběžných změnách. */
+  const adjustCopies = (id: string, delta: number) => {
+    setBooks((prev) =>
+      prev.map((b) => (b.id === id ? { ...b, copies: Math.max(1, (b.copies && b.copies > 0 ? b.copies : 1) + delta) } : b))
+    );
+  };
+
   const updateBook = (updatedBook: Book) => {
     setBooks((prev) =>
       prev.map((b) => (b.id === updatedBook.id ? updatedBook : b))
@@ -119,6 +134,8 @@ export function useBookStorage() {
     updateBook,
     deleteBook,
     restoreBook,
+    insertBook,
+    adjustCopies,
     clearAllBooks,
     recordScan,
     clearScanHistory,

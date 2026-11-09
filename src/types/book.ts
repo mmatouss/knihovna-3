@@ -35,3 +35,25 @@ export interface ScanRecord {
 }
 
 export type ScanMode = 'camera' | 'manual' | 'list';
+
+/** Jedna naskenovaná kniha v režimu rychlého skenování. */
+export interface BatchItem {
+  id: string;
+  isbn: string;
+  /**
+   * pending  = hledá se v databázích
+   * added    = nová kniha uložena
+   * copy     = kniha už v knihovně byla → přidán další výtisk
+   * skipped  = kniha už v knihovně byla → přeskočeno
+   * notFound = uloženo, ale údaje se nenašly (doplnit ručně)
+   * error    = chyba
+   */
+  status: 'pending' | 'added' | 'copy' | 'skipped' | 'notFound' | 'error';
+  bookId?: string;
+  title?: string;
+  authors?: string[];
+  coverUrl?: string;
+  scannedAt: number;
+  /** Akce byla vrácena zpět. */
+  undone?: boolean;
+}
