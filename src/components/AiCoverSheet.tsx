@@ -63,8 +63,8 @@ export const AiCoverSheet: React.FC<AiCoverSheetProps> = ({ photo, books, onPick
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" role="dialog" aria-modal="true" aria-label="Rozpoznání obálky">
-      <button type="button" className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm" onClick={onClose} aria-label="Zavřít" />
-      <div className="relative w-full sm:max-w-md max-h-[88vh] overflow-y-auto bg-white dark:bg-slate-800 rounded-t-3xl sm:rounded-3xl shadow-2xl p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] space-y-4 animate-in slide-in-from-bottom duration-300">
+      <button type="button" className="absolute inset-0 bg-slate-950/60 anim-fade" onClick={onClose} aria-label="Zavřít" />
+      <div className="relative w-full sm:max-w-md max-h-[88dvh] overflow-y-auto bg-white dark:bg-slate-800 rounded-t-3xl sm:rounded-3xl shadow-2xl p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] space-y-4 anim-sheet">
         <div className="mx-auto -mt-2 mb-1 h-1 w-10 rounded-full bg-slate-300 dark:bg-slate-600 sm:hidden" />
         <div className="flex items-start gap-3">
           {preview && (

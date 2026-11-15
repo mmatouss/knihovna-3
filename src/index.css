@@ -89,3 +89,20 @@
 .animate-laser {
   animation: laser-sweep 2s ease-in-out infinite;
 }
+
+/* Animace oken a hlášek (dřív tu byly třídy „animate-in“, které bez pluginu nic nedělaly). */
+@keyframes anim-fade {
+  from { opacity: 0; }
+}
+@keyframes anim-sheet {
+  from { opacity: 0; transform: translateY(24px); }
+}
+@keyframes anim-toast {
+  from { opacity: 0; transform: translateY(-12px); }
+}
+.anim-fade { animation: anim-fade 0.2s ease-out; }
+.anim-sheet { animation: anim-sheet 0.25s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.anim-toast { animation: anim-toast 0.25s ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .anim-fade, .anim-sheet, .anim-toast { animation: none; }
+}

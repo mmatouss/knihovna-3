@@ -13,7 +13,6 @@ import {
   Layers,
   Plus,
   Minus,
-  AlertCircle,
   User,
   Languages,
   Tag,
@@ -79,6 +78,8 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
   const [showDuplicateNotice, setShowDuplicateNotice] = useState(isDuplicateScan);
   const [isEnriching, setIsEnriching] = useState(false);
   const [showFullDescription, setShowFullDescription] = useState(false);
+  // Chyby ve formuláři ukazujeme až po prvním pokusu o uložení.
+  const [showErrors, setShowErrors] = useState(false);
 
   if (!book) return null;
 
@@ -133,7 +134,15 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
   const formError = titleError || isbnError || pagesError || copiesError;
 
   const handleSave = () => {
-    if (formError) return;
+    if (formError) {
+      // Tlačítko není zašedlé – místo toho ukážeme, co chybí, a posuneme se k tomu poli.
+      setShowErrors(true);
+      const fieldId = titleError ? 'edit-title' : isbnError ? 'edit-isbn' : pagesError ? 'edit-pages' : 'edit-copies';
+      const field = document.getElementById(fieldId);
+      field?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      field?.focus({ preventScroll: true });
+      return;
+    }
     const authors = form.authorsStr.split(',').map((a) => a.trim()).filter(Boolean);
     const updated: Book = {
       ...book,
@@ -167,11 +176,11 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-slate-950/60 anim-fade"
       onClick={onClose}
     >
       <div
-        className="bg-white dark:bg-slate-800 rounded-3xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh] border border-slate-200 dark:border-slate-700"
+        className="bg-white dark:bg-slate-800 rounded-t-3xl sm:rounded-3xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[92dvh] sm:max-h-[90dvh] border border-slate-200 dark:border-slate-700 anim-sheet"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-label="Detail knihy"
@@ -286,12 +295,19 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
                     <input
                       id="edit-title"
                       type="text"
-                      autoFocus={book.metadataMissing}
+                      // Na telefonu by klávesnice hned zakryla půlku okna – kurzor dáme jen na počítači.
+                      autoFocus={book.metadataMissing && window.matchMedia?.('(pointer: fine)').matches}
                       placeholder="Např. Babička"
                       value={form.title}
                       onChange={set('title')}
-                      className={`${inputClass} text-sm font-semibold`}
+                      aria-invalid={showErrors && Boolean(titleError)}
+                      className={`${inputClass} text-sm font-semibold ${
+                        showErrors && titleError ? 'border-rose-500 ring-2 ring-rose-200 dark:ring-rose-900' : ''
+                      }`}
                     />
+                    {showErrors && titleError && (
+                      <p className="mt-1 text-xs text-rose-600 dark:text-rose-400">{titleError}</p>
+                    )}
                   </div>
                   <div>
                     <label htmlFor="edit-authors" className="block text-xs text-slate-500 mb-1">
@@ -532,18 +548,12 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
                   className={inputClass}
                 />
               </div>
-              {titleError && (
-                <p className="text-rose-600 dark:text-rose-400 flex items-center">
-                  <AlertCircle className="w-3.5 h-3.5 mr-1" />
-                  {titleError}
-                </p>
-              )}
             </div>
           )}
         </div>
 
         {/* Footer Actions */}
-        <div className="p-4 px-6 border-t border-slate-100 dark:border-slate-700/60 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/50">
+        <div className="p-4 px-6 pb-[max(1rem,env(safe-area-inset-bottom))] border-t border-slate-100 dark:border-slate-700/60 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/50">
           <button
             onClick={() => onDelete(book.id)}
             className="px-3 py-2 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-xl font-medium text-xs flex items-center space-x-1.5 transition-colors"
@@ -575,8 +585,7 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
               </button>
               <button
                 onClick={handleSave}
-                disabled={Boolean(formError)}
-                className="px-4 py-2 bg-indigo-600 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white rounded-xl font-medium text-xs flex items-center space-x-1.5 hover:bg-indigo-700 transition-colors"
+                className="px-4 py-2 bg-indigo-600 text-white rounded-xl font-medium text-xs flex items-center space-x-1.5 hover:bg-indigo-700 transition-colors"
               >
                 <Save className="w-4 h-4" />
                 <span>Uložit</span>
