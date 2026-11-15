@@ -4,7 +4,7 @@ import type { Book } from '../types/book';
 import { BookCover } from './BookCover';
 import { normalizeText } from '../utils/bookMatching';
 import { searchBooksByText, type BookCandidate } from '../services/coverSearch';
-import { AiCoverError, getGeminiKey, identifyCoverWithAi, setGeminiKey } from '../services/aiCover';
+import { AiCoverError, HAS_BUILT_IN_KEY, getGeminiKey, identifyCoverWithAi, setGeminiKey } from '../services/aiCover';
 
 interface CoverPhotoSearchProps {
   books: Book[];
@@ -124,7 +124,7 @@ export const CoverPhotoSearch: React.FC<CoverPhotoSearchProps> = ({ books, onPic
               <X className="w-5 h-5" />
             </button>
           )}
-          {!keyMissing && (
+          {!keyMissing && !HAS_BUILT_IN_KEY && (
             <button
               type="button"
               onClick={() => setShowSettings((v) => !v)}
@@ -139,7 +139,7 @@ export const CoverPhotoSearch: React.FC<CoverPhotoSearchProps> = ({ books, onPic
       </div>
 
       {/* Nastavení klíče – zobrazí se, když klíč chybí, nebo po klepnutí na kolečko */}
-      {(keyMissing || showSettings) && (
+      {!HAS_BUILT_IN_KEY && (keyMissing || showSettings) && (
         <form
           className="space-y-2 p-3 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900 text-xs text-slate-700 dark:text-slate-300"
           onSubmit={(e) => {
@@ -228,6 +228,11 @@ export const CoverPhotoSearch: React.FC<CoverPhotoSearchProps> = ({ books, onPic
         <Camera className="w-4 h-4" />
         {photoUrl ? 'Vyfotit znovu' : 'Vyfotit obálku'}
       </button>
+      {HAS_BUILT_IN_KEY && (
+        <p className="-mt-2 text-[11px] text-center text-slate-500 dark:text-slate-400">
+          Fotka se pošle k rozpoznání AI Google Gemini (může ji použít ke zlepšování svých modelů).
+        </p>
+      )}
 
       {/* Hledání podle napsaného názvu – funguje i bez AI klíče */}
       <form
