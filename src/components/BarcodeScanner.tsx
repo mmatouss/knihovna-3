@@ -493,14 +493,14 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
     <div
       className={
         coverMode
-          ? 'fixed inset-0 z-[60] bg-black text-white flex flex-col'
+          ? 'fixed inset-0 z-[60] !m-0 bg-black text-white flex flex-col'
           : 'w-full max-w-md mx-auto bg-slate-900 rounded-3xl overflow-hidden shadow-lg border border-slate-800 text-white relative'
       }
     >
       {/* Viewport container */}
       <div
         className={`relative w-full bg-slate-950 flex items-center justify-center overflow-hidden ${
-          coverMode ? 'flex-1 min-h-0' : 'aspect-[3/4]'
+          coverMode ? 'flex-1 min-h-0' : 'aspect-[3/4] max-h-[48dvh]'
         }`}
       >
         <video

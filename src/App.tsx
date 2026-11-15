@@ -369,7 +369,7 @@ export function App() {
   );
 
   return (
-    <div className="min-h-screen paper-bg bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 flex flex-col font-sans pb-24 sm:pb-8">
+    <div className="min-h-dvh paper-bg bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 flex flex-col font-sans pb-24 sm:pb-8">
       {/* Top Application Header */}
       <header className="sticky top-0 z-30 bg-slate-50/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200/70 dark:border-slate-800 px-4 py-3">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
@@ -405,7 +405,7 @@ export function App() {
         {/* Toast Notification */}
         {notification && (
           <div
-            className={`fixed top-16 left-1/2 -translate-x-1/2 z-50 w-11/12 max-w-md p-3.5 rounded-2xl shadow-lg border flex items-center space-x-3 transition-all animate-in slide-in-from-top duration-300 ${
+            className={`fixed top-16 left-1/2 -translate-x-1/2 z-[45] w-11/12 max-w-md p-3.5 rounded-2xl shadow-lg border flex items-center space-x-3 anim-toast ${
               notification.type === 'success'
                 ? 'bg-emerald-900/90 border-emerald-700 text-emerald-100 backdrop-blur-md'
                 : notification.type === 'warning'
