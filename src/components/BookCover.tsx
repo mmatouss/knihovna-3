@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { normalizeIsbn } from '../utils/isbn';
 
 /**
  * Obálka knihy. Když má kniha obrázek obálky, zobrazí ho. Když ne (nebo se
@@ -10,6 +11,8 @@ interface BookCoverProps {
   title: string;
   authors?: string[];
   coverUrl?: string;
+  /** ISBN – když uložená obálka chybí, zkusí se obálka podle ISBN z dalších zdrojů. */
+  isbn?: string;
   /** compact = jen iniciála (malé náhledy), full = název a autor. */
   variant?: 'compact' | 'full';
   className?: string;
@@ -28,6 +31,21 @@ const CLOTH_COLORS: Array<[string, string]> = [
   ['#9a4b2b', '#fbead2'], // cihlová
 ];
 
+/**
+ * Adresy obálek, které postupně zkoušíme: uložená obálka, pak Obálky knih
+ * a Open Library podle ISBN. Když jedna nevyjde, načte se další.
+ */
+function coverCandidates(coverUrl?: string, isbn?: string): string[] {
+  const urls = [coverUrl];
+  const clean = isbn ? normalizeIsbn(isbn) : '';
+  if (clean.length === 10 || clean.length === 13) {
+    urls.push(`https://www.obalkyknih.cz/api/cover?isbn=${clean}`);
+    // default=false → když obálku nemají, vrátí chybu 404 místo prázdného obrázku.
+    urls.push(`https://covers.openlibrary.org/b/isbn/${clean}-M.jpg?default=false`);
+  }
+  return [...new Set(urls.filter((u): u is string => Boolean(u)))];
+}
+
 function hashString(text: string): number {
   let hash = 0;
   for (let i = 0; i < text.length; i++) hash = (hash * 31 + text.charCodeAt(i)) | 0;
@@ -38,11 +56,18 @@ export const BookCover: React.FC<BookCoverProps> = ({
   title,
   authors = [],
   coverUrl,
+  isbn,
   variant = 'full',
   className = '',
 }) => {
-  const [imageFailed, setImageFailed] = useState(false);
-  const [imageLoaded, setImageLoaded] = useState(false);
+  const candidates = coverCandidates(coverUrl, isbn);
+  const candidatesKey = candidates.join('|');
+  // Kolikátou adresu obálky právě zkoušíme (při změně knihy začínáme znovu od první).
+  const [attempt, setAttempt] = useState({ key: candidatesKey, index: 0, loaded: false });
+  const current = attempt.key === candidatesKey ? attempt : { key: candidatesKey, index: 0, loaded: false };
+  const src = candidates[current.index];
+  const imageLoaded = current.loaded;
+  const tryNext = () => setAttempt({ key: candidatesKey, index: current.index + 1, loaded: false });
   const [cloth, ink] = CLOTH_COLORS[hashString(title) % CLOTH_COLORS.length];
   const author = authors.filter((a) => a && a !== 'Neznámý autor').join(', ');
   const initial = title.trim().charAt(0).toUpperCase() || '?';
@@ -91,17 +116,18 @@ export const BookCover: React.FC<BookCoverProps> = ({
         </div>
       )}
 
-      {coverUrl && !imageFailed && (
+      {src && (
         <img
-          src={coverUrl}
+          key={src}
+          src={src}
           alt=""
           loading="lazy"
           onLoad={(e) => {
             // Některé služby místo chybějící obálky vrátí obrázek 1×1 px.
-            if (e.currentTarget.naturalWidth < 10) setImageFailed(true);
-            else setImageLoaded(true);
+            if (e.currentTarget.naturalWidth < 10) tryNext();
+            else setAttempt({ key: candidatesKey, index: current.index, loaded: true });
           }}
-          onError={() => setImageFailed(true)}
+          onError={tryNext}
           className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${
             imageLoaded ? 'opacity-100' : 'opacity-0'
           }`}

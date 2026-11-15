@@ -147,6 +147,7 @@ export const BatchSessionPanel: React.FC<BatchSessionPanelProps> = ({
                   title={item.title || item.isbn}
                   authors={item.authors}
                   coverUrl={item.coverUrl}
+                  isbn={item.isbn}
                   variant="compact"
                   className="w-8 h-11 flex-shrink-0"
                 />

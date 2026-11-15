@@ -229,6 +229,7 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
               title={book.title}
               authors={book.authors}
               coverUrl={book.coverUrl}
+              isbn={book.isbn}
               className="w-24 h-36 flex-shrink-0"
             />
 

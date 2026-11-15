@@ -82,6 +82,7 @@ export const RecentScansList: React.FC<RecentScansListProps> = ({
                     title={matchedBook?.title || record.bookTitle || record.isbn || '?'}
                     authors={matchedBook?.authors}
                     coverUrl={matchedBook?.coverUrl || record.bookCoverUrl}
+                    isbn={matchedBook?.isbn || record.isbn}
                     variant="compact"
                     className="w-8 h-11 flex-shrink-0"
                   />
@@ -133,6 +134,7 @@ export const RecentScansList: React.FC<RecentScansListProps> = ({
                   title={book.title}
                   authors={book.authors}
                   coverUrl={book.coverUrl}
+                  isbn={book.isbn}
                   variant="compact"
                   className="w-8 h-11 flex-shrink-0"
                 />
