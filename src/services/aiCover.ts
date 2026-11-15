@@ -13,6 +13,17 @@ import { normalizeText } from '../utils/bookMatching';
  */
 
 const KEY_STORAGE = 'knihovnik_gemini_key';
+
+/**
+ * Společný klíč knihovny – vloží se při nasazení z GitHub secretu GEMINI_API_KEY
+ * (viz .github/workflows/deploy.yml). Díky němu nikdo nemusí zadávat vlastní klíč.
+ * Klíč je v aplikaci veřejně vidět, proto musí být v Google Cloud omezený jen
+ * na web aplikace a jen na Gemini API (návod v README).
+ */
+const BUILT_IN_KEY: string = import.meta.env?.VITE_GEMINI_API_KEY ?? '';
+
+/** Má aplikace společný klíč? Pak se nastavení klíče vůbec nezobrazuje. */
+export const HAS_BUILT_IN_KEY = Boolean(BUILT_IN_KEY);
 const MODEL_STORAGE = 'knihovnik_gemini_model';
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 const AI_TIMEOUT_MS = 45000;
@@ -21,6 +32,8 @@ const AI_TIMEOUT_MS = 45000;
 const FALLBACK_MODELS = ['gemini-3.8-flash', 'gemini-3-flash-preview', 'gemini-3.6-flash', 'gemini-2.5-flash'];
 
 export function getGeminiKey(): string {
+  if (BUILT_IN_KEY) return BUILT_IN_KEY;
+  // Bez společného klíče (např. při vývoji na vlastním počítači) jde zadat vlastní.
   try {
     return localStorage.getItem(KEY_STORAGE) ?? '';
   } catch {
@@ -37,6 +50,12 @@ export function setGeminiKey(key: string): void {
     /* úložiště nedostupné */
   }
 }
+
+/** Zpráva při odmítnutém klíči – jiná pro společný a pro vlastní klíč. */
+const KEY_PROBLEM = () =>
+  BUILT_IN_KEY
+    ? 'AI odmítla klíč aplikace (neplatný klíč nebo špatně nastavené omezení webu). Dejte vědět správci aplikace.'
+    : 'Klíč k Gemini API není platný. Zkontrolujte ho v nastavení (ozubené kolečko).';
 
 /** Chyba se srozumitelnou českou zprávou pro knihovníka. */
 export class AiCoverError extends Error {}
@@ -160,7 +179,7 @@ async function listModels(key: string): Promise<string[]> {
   try {
     const res = await fetchWithTimeout(`${API}/models?pageSize=200&key=${encodeURIComponent(key)}`, {}, 10000);
     if (res.status === 400 || res.status === 401 || res.status === 403) {
-      throw new AiCoverError('Klíč k Gemini API není platný. Zkontrolujte ho v nastavení (ozubené kolečko).');
+      throw new AiCoverError(KEY_PROBLEM());
     }
     if (res.ok) {
       const data = (await res.json()) as {
@@ -174,7 +193,7 @@ async function listModels(key: string): Promise<string[]> {
         .sort(byVersionDesc);
     }
   } catch (err) {
-    if (err instanceof AiCoverError && /není platný/.test(err.message)) throw err;
+    if (err instanceof AiCoverError && err.message === KEY_PROBLEM()) throw err;
     // Seznam se nenačetl – použijeme známé názvy.
   }
   const models = [remembered, ...available, ...FALLBACK_MODELS].filter(Boolean);
@@ -209,8 +228,8 @@ async function askGemini(key: string, imageDataUrl: string): Promise<{ guesses: 
     );
     if (res.status === 400 || res.status === 401 || res.status === 403) {
       const text = await res.text();
-      if (/API key|API_KEY|PERMISSION_DENIED|UNAUTHENTICATED/i.test(text)) {
-        throw new AiCoverError('Klíč k Gemini API není platný. Zkontrolujte ho v nastavení (ozubené kolečko).');
+      if (/API key|API_KEY|PERMISSION_DENIED|UNAUTHENTICATED|referer|referrer/i.test(text)) {
+        throw new AiCoverError(KEY_PROBLEM());
       }
       lastProblem = `model ${model}: chyba ${res.status}`;
       continue;

@@ -38,6 +38,9 @@ jobs:
           # Nepovinné: klíč ke Google Books API (Settings → Secrets → Actions).
           # Bez něj Google občas odmítne dotaz (limit) a použijí se jen ostatní databáze.
           VITE_GOOGLE_BOOKS_API_KEY: ${{ secrets.GOOGLE_BOOKS_API_KEY }}
+          # Společný klíč k Gemini (rozpoznání obálky AI). Je v aplikaci veřejný,
+          # proto musí být v Google Cloud omezený na web aplikace – viz README.
+          VITE_GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
       - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@v3
