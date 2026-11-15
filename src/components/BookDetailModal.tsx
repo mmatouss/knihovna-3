@@ -71,6 +71,8 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
     language: languageName(book?.language),
     categories: book?.categories?.join(', ') ?? '',
     notes: book?.notes || '',
+    // Automatický text „Informace nebyly nalezeny…“ do pole nedáváme.
+    description: missing ? '' : (book?.description ?? ''),
   };
   const [isEditing, setIsEditing] = useState(startEditing);
   const [form, setForm] = useState(initial);
@@ -146,8 +148,7 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
       language: form.language.trim() || undefined,
       categories: form.categories.split(',').map((c) => c.trim()).filter(Boolean),
       notes: form.notes.trim(),
-      // Odstraníme automatický text „Informace nebyly nalezeny…“.
-      description: book.metadataMissing ? '' : book.description,
+      description: form.description.trim(),
       metadataMissing: false,
     };
     onUpdate(updated);
@@ -505,6 +506,17 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
               {(pagesError || copiesError) && (
                 <p className="text-rose-600 dark:text-rose-400">{pagesError || copiesError}</p>
               )}
+              <div>
+                <label htmlFor="edit-description" className="block text-slate-500 mb-1">Popis (o čem kniha je)</label>
+                <textarea
+                  id="edit-description"
+                  rows={4}
+                  value={form.description}
+                  onChange={set('description')}
+                  placeholder="Krátká anotace – opište ji např. ze zadní strany obálky."
+                  className={inputClass}
+                />
+              </div>
               <div>
                 <label htmlFor="edit-notes" className="block text-slate-500 mb-1 flex items-center">
                   <FileText className="w-3.5 h-3.5 mr-1 text-slate-400" />
