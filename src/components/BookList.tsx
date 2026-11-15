@@ -78,7 +78,22 @@ export const BookList: React.FC<BookListProps> = ({
   onNavigateToScan,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
+  // Výchozí je galerie obálek; volbu si pamatujeme v tomto zařízení.
+  const [viewMode, setViewModeState] = useState<'grid' | 'list'>(() => {
+    try {
+      return localStorage.getItem('knihovnik_view_mode') === 'list' ? 'list' : 'grid';
+    } catch {
+      return 'grid';
+    }
+  });
+  const setViewMode = (mode: 'grid' | 'list') => {
+    setViewModeState(mode);
+    try {
+      localStorage.setItem('knihovnik_view_mode', mode);
+    } catch {
+      /* úložiště nedostupné – nevadí */
+    }
+  };
   const [sortOrder, setSortOrder] = useState<SortOrder>('newest');
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [showFilters, setShowFilters] = useState(false);
@@ -282,6 +297,7 @@ export const BookList: React.FC<BookListProps> = ({
                       : 'text-slate-400'
                   }`}
                   title="Seznam"
+                  aria-label="Zobrazit seznam"
                 >
                   <ListIcon className="w-4 h-4" />
                 </button>
@@ -292,7 +308,8 @@ export const BookList: React.FC<BookListProps> = ({
                       ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-xs'
                       : 'text-slate-400'
                   }`}
-                  title="Mřížka"
+                  title="Obálky"
+                  aria-label="Zobrazit obálky"
                 >
                   <Grid className="w-4 h-4" />
                 </button>
@@ -455,7 +472,7 @@ export const BookList: React.FC<BookListProps> = ({
           className={
             viewMode === 'list'
               ? 'grid grid-cols-1 lg:grid-cols-2 gap-2.5'
-              : 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-4 gap-y-6'
+              : 'grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-x-3 gap-y-5'
           }
         >
           {filteredBooks.map((book) => {
@@ -498,6 +515,7 @@ export const BookList: React.FC<BookListProps> = ({
                   title={book.title}
                   authors={book.authors}
                   coverUrl={book.coverUrl}
+                  isbn={book.isbn}
                   variant="compact"
                   className="w-12 h-[4.5rem] flex-shrink-0"
                 />
@@ -530,9 +548,10 @@ export const BookList: React.FC<BookListProps> = ({
                   title={book.title}
                   authors={book.authors}
                   coverUrl={book.coverUrl}
+                  isbn={book.isbn}
                   className="w-full aspect-[2/3] transition-transform group-hover:-translate-y-1 group-hover:rotate-[-0.6deg]"
                 />
-                <h4 className="mt-2.5 text-sm font-semibold text-slate-900 dark:text-white leading-snug line-clamp-2">
+                <h4 className="mt-2 text-xs sm:text-sm font-semibold text-slate-900 dark:text-white leading-snug line-clamp-2">
                   {book.title}
                 </h4>
                 <p className="text-[11px] text-slate-600 dark:text-slate-400 truncate">{book.authors.join(', ')}</p>
