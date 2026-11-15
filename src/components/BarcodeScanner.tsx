@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { BrowserMultiFormatReader } from '@zxing/browser';
 import { BarcodeFormat, DecodeHintType } from '@zxing/library';
-import { SwitchCamera, AlertTriangle, RefreshCw, Zap, ZapOff, ScanText, Keyboard, Sparkles } from 'lucide-react';
+import { SwitchCamera, AlertTriangle, RefreshCw, Zap, ZapOff, ScanText, Keyboard, Sparkles, Check, X } from 'lucide-react';
 import { normalizeIsbn } from '../utils/isbn';
 import { OCR_VARIANTS, preloadIsbnOcr, readIsbnFromImage } from '../services/isbnOcr';
 
@@ -119,11 +119,31 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
   useEffect(() => {
     repeatDelayRef.current = repeatDelayMs;
   }, [repeatDelayMs]);
+  // Režim „vyfotit obálku“: kamera přes celou obrazovku, velký rámeček a spoušť.
+  const [coverMode, setCoverMode] = useState(false);
+  const [flash, setFlash] = useState(false);
+  const coverFrameRef = useRef<HTMLDivElement | null>(null);
+
   useEffect(() => {
-    isPausedRef.current = isPaused;
+    // Při focení obálky se čárové kódy nečtou.
+    const paused = isPaused || coverMode;
+    isPausedRef.current = paused;
     // Po pauze (zavření detailu knihy) nehlásit znovu kód, který je pořád v záběru.
-    if (!isPaused && lastScannedRef.current) lastScannedRef.current.time = Date.now();
-  }, [isPaused]);
+    if (!paused && lastScannedRef.current) lastScannedRef.current.time = Date.now();
+  }, [isPaused, coverMode]);
+
+  // Při focení obálky: stránka pod kamerou se neposouvá, Esc = zrušit.
+  useEffect(() => {
+    if (!coverMode) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setCoverMode(false);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [coverMode]);
 
   const [cameras, setCameras] = useState<Array<{ id: string; label: string }>>([]);
   // Prázdný řetězec = výchozí zadní kamera (facingMode: environment).
@@ -423,21 +443,66 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
     setSelectedCameraId(switchableCameras[nextIndex].id);
   };
 
-  /** Vyfotí aktuální obraz z kamery (celý, v plném rozlišení) pro AI. */
+  /**
+   * Vyfotí obálku: z obrazu kamery vyřízne oblast nakresleného rámečku
+   * (s malým okrajem) v plném rozlišení kamery a pošle ji k rozpoznání AI.
+   */
   const takeCoverPhoto = () => {
     const video = videoRef.current;
+    const frame = coverFrameRef.current;
     if (!video || !onCoverPhoto || !video.videoWidth) return;
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    let sx = 0;
+    let sy = 0;
+    let sw = vw;
+    let sh = vh;
+    if (frame) {
+      // Video je zobrazené s object-fit: cover → přepočet z obrazovky na pixely kamery.
+      const vr = video.getBoundingClientRect();
+      const fr = frame.getBoundingClientRect();
+      const scale = Math.max(vr.width / vw, vr.height / vh);
+      const offsetX = (vr.width - vw * scale) / 2;
+      const offsetY = (vr.height - vh * scale) / 2;
+      const margin = 0.06; // kousek okolí navíc, kdyby obálka přečnívala
+      const left = (fr.left - vr.left - offsetX) / scale - (fr.width / scale) * margin;
+      const top = (fr.top - vr.top - offsetY) / scale - (fr.height / scale) * margin;
+      sx = Math.max(0, left);
+      sy = Math.max(0, top);
+      sw = Math.min(vw - sx, (fr.width / scale) * (1 + 2 * margin));
+      sh = Math.min(vh - sy, (fr.height / scale) * (1 + 2 * margin));
+    }
     const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    canvas.getContext('2d')!.drawImage(video, 0, 0);
-    canvas.toBlob((blob) => blob && onCoverPhoto(blob), 'image/jpeg', 0.9);
+    canvas.width = Math.round(sw);
+    canvas.height = Math.round(sh);
+    canvas.getContext('2d')!.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+
+    setFlash(true);
+    setTimeout(() => setFlash(false), 180);
+    canvas.toBlob(
+      (blob) => {
+        setCoverMode(false);
+        if (blob) onCoverPhoto(blob);
+      },
+      'image/jpeg',
+      0.9
+    );
   };
 
   return (
-    <div className="w-full max-w-md mx-auto bg-slate-900 rounded-3xl overflow-hidden shadow-lg border border-slate-800 text-white relative">
+    <div
+      className={
+        coverMode
+          ? 'fixed inset-0 z-[60] bg-black text-white flex flex-col'
+          : 'w-full max-w-md mx-auto bg-slate-900 rounded-3xl overflow-hidden shadow-lg border border-slate-800 text-white relative'
+      }
+    >
       {/* Viewport container */}
-      <div className="relative aspect-[3/4] w-full bg-slate-950 flex items-center justify-center overflow-hidden">
+      <div
+        className={`relative w-full bg-slate-950 flex items-center justify-center overflow-hidden ${
+          coverMode ? 'flex-1 min-h-0' : 'aspect-[3/4]'
+        }`}
+      >
         <video
           ref={videoRef}
           className="absolute inset-0 w-full h-full object-cover"
@@ -462,7 +527,7 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
                 {isTorchOn ? <Zap className="w-5 h-5 fill-current" /> : <ZapOff className="w-5 h-5" />}
               </button>
             )}
-            {switchableCameras.length > 1 && (
+            {switchableCameras.length > 1 && !coverMode && (
               <button
                 type="button"
                 onClick={switchCamera}
@@ -475,8 +540,29 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
           </div>
         )}
 
+        {/* Focení obálky: velký rámeček ve tvaru knihy */}
+        {coverMode && !errorMsg && !isInitializing && (
+          <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center px-6 pt-[max(1rem,env(safe-area-inset-top))]">
+            <p className="mb-3 text-sm font-semibold text-white bg-black/60 px-4 py-1.5 rounded-full backdrop-blur-md flex items-center gap-1.5">
+              <Sparkles className="w-4 h-4 text-indigo-300" />
+              Celou obálku dejte do rámečku
+            </p>
+            <div
+              ref={coverFrameRef}
+              className="relative rounded-xl border-2 border-white/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.6)]"
+              // Tvar obálky (2 : 3); šířka podle toho, co je menší – šířka nebo výška obrazovky.
+              style={{ width: 'min(84vw, 44dvh)', aspectRatio: '2 / 3' }}
+            >
+              {(['top-0 left-0 border-t-4 border-l-4 rounded-tl-xl', 'top-0 right-0 border-t-4 border-r-4 rounded-tr-xl', 'bottom-0 left-0 border-b-4 border-l-4 rounded-bl-xl', 'bottom-0 right-0 border-b-4 border-r-4 rounded-br-xl'] as const).map((pos) => (
+                <div key={pos} className={`absolute -m-1 w-8 h-8 border-indigo-400 ${pos}`} />
+              ))}
+            </div>
+          </div>
+        )}
+        {flash && <div className="absolute inset-0 bg-white/80 pointer-events-none" />}
+
         {/* Visual Overlay for scanning line & target */}
-        {isScanningActive && !errorMsg && !isInitializing && (
+        {isScanningActive && !errorMsg && !isInitializing && !coverMode && (
           <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center">
             {/* Target Box (80% width, ~3:1 aspect ratio) */}
             <div
@@ -568,8 +654,35 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
         )}
       </div>
 
+      {/* Focení obálky: Zrušit – spoušť – (svítilna je nahoře v obraze) */}
+      {coverMode && (
+        <div className="flex items-center justify-between px-8 pt-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] bg-black">
+          <button
+            type="button"
+            onClick={() => setCoverMode(false)}
+            className="w-14 h-14 rounded-full bg-white/10 hover:bg-white/20 flex flex-col items-center justify-center text-[10px] font-medium"
+            aria-label="Zrušit focení obálky"
+          >
+            <X className="w-5 h-5" />
+            Zrušit
+          </button>
+          <button
+            type="button"
+            onClick={takeCoverPhoto}
+            disabled={isInitializing || Boolean(errorMsg)}
+            className="w-20 h-20 rounded-full border-4 border-white p-1 active:scale-95 transition-transform disabled:opacity-40"
+            aria-label="Vyfotit obálku"
+          >
+            <span className="w-full h-full rounded-full bg-white text-slate-900 flex items-center justify-center">
+              <Check className="w-9 h-9" strokeWidth={3} />
+            </span>
+          </button>
+          <span className="w-14" aria-hidden="true" />
+        </div>
+      )}
+
       {/* Akce pod kamerou */}
-      {isScanningActive && !errorMsg && !isInitializing && (
+      {isScanningActive && !errorMsg && !isInitializing && !coverMode && (
         <div className="p-3 space-y-2.5 bg-slate-900">
           <div className={`grid gap-2.5 ${onCoverPhoto ? 'grid-cols-2' : 'grid-cols-1'}`}>
             <button
@@ -593,7 +706,7 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
             {onCoverPhoto && (
               <button
                 type="button"
-                onClick={takeCoverPhoto}
+                onClick={() => setCoverMode(true)}
                 className="min-h-[4.25rem] px-3 py-2.5 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 hover:from-indigo-400 hover:to-violet-500 active:scale-[0.98] text-left flex items-center gap-2.5 shadow-lg shadow-indigo-900/40 transition-all"
               >
                 <span className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
