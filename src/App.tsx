@@ -68,7 +68,11 @@ export function App() {
       categories: candidate.categories ?? [],
       // Fotka je obálka právě této knihy – má přednost před obrázkem z databáze.
       coverUrl: photoUrl ?? candidate.coverUrl,
-      source: `${candidate.source} (podle obálky)`,
+      source: candidate.aiConfidence
+        ? candidate.source === 'AI odhad'
+          ? 'AI Gemini (podle obálky)'
+          : `AI Gemini (podle obálky), ${candidate.source}`
+        : `${candidate.source} (podle názvu)`,
     });
     addBook(book);
     showToast('success', `Kniha bez ISBN uložena: "${book.title}"`, {

@@ -1,68 +1,91 @@
 import React, { useRef, useState } from 'react';
-import { Camera, Search, Loader2, AlertCircle, PenLine, X, Check } from 'lucide-react';
+import { Camera, Search, Loader2, AlertCircle, PenLine, X, Check, Settings, Sparkles, KeyRound } from 'lucide-react';
 import type { Book } from '../types/book';
 import { BookCover } from './BookCover';
 import { normalizeText } from '../utils/bookMatching';
-import {
-  preloadCoverOcr,
-  queryVariants,
-  readCoverPhoto,
-  searchBooksByText,
-  type BookCandidate,
-  type CoverTextLine,
-} from '../services/coverSearch';
+import { searchBooksByText, type BookCandidate } from '../services/coverSearch';
+import { AiCoverError, getGeminiKey, identifyCoverWithAi, setGeminiKey } from '../services/aiCover';
 
 interface CoverPhotoSearchProps {
   books: Book[];
   /** Knihovník vybral nalezenou knihu. `photoUrl` = jeho fotka obálky. */
   onPick: (candidate: BookCandidate, photoUrl?: string) => void;
-  /** Nic nesedí → zapsat ručně (předvyplní se rozpoznaný název). */
+  /** Nic nesedí → zapsat ručně (předvyplní se název, pokud nějaký je). */
   onManual: (title: string, photoUrl?: string) => void;
   /** Otevře knihu, která už v knihovně je. */
   onSelectBook: (book: Book) => void;
 }
 
-type Phase = 'idle' | 'reading' | 'searching' | 'results';
+type Phase = 'idle' | 'working' | 'results';
 
 const inputClass =
   'w-full px-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all text-sm';
 
+const CONFIDENCE_LABEL = {
+  high: ['AI: jistě', 'bg-emerald-50 text-emerald-800 ring-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:ring-emerald-800'],
+  medium: ['AI: asi', 'bg-sky-50 text-sky-800 ring-sky-200 dark:bg-sky-950/60 dark:text-sky-300 dark:ring-sky-800'],
+  low: ['AI: tip', 'bg-slate-100 text-slate-600 ring-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:ring-slate-600'],
+} as const;
+
 /**
- * Kniha bez ISBN: vyfoťte obálku, aplikace přečte název a autora (OCR)
- * a najde knihu v online databázích. Jde i jen napsat název.
+ * Kniha bez ISBN: vyfoťte obálku a AI (Google Gemini) podle vzhledu
+ * pozná, o jakou knihu jde. Jde i jen napsat název.
  */
 export const CoverPhotoSearch: React.FC<CoverPhotoSearchProps> = ({ books, onPick, onManual, onSelectBook }) => {
   const fileRef = useRef<HTMLInputElement>(null);
+  const [apiKey, setApiKey] = useState(getGeminiKey);
+  const [keyDraft, setKeyDraft] = useState('');
+  const [showSettings, setShowSettings] = useState(false);
   const [phase, setPhase] = useState<Phase>('idle');
   const [status, setStatus] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | undefined>();
   const [query, setQuery] = useState('');
-  const [lines, setLines] = useState<CoverTextLine[]>([]);
   const [photoUrl, setPhotoUrl] = useState<string | undefined>();
   const [results, setResults] = useState<BookCandidate[]>([]);
 
-  const busy = phase === 'reading' || phase === 'searching';
+  const busy = phase === 'working';
+  const keyMissing = !apiKey;
 
-  /** Hledá postupně podle dotazů; skončí u prvního, se kterým se něco najde. */
-  const runSearch = async (texts: string[]) => {
-    const queries = texts.filter((t) => t.trim());
-    if (queries.length === 0) return;
-    setPhase('searching');
+  const saveKey = () => {
+    setGeminiKey(keyDraft);
+    setApiKey(keyDraft.trim());
+    setKeyDraft('');
+    setShowSettings(false);
+  };
+
+  const handlePhoto = async (file: File | undefined) => {
+    if (!file) return;
+    setPhase('working');
+    setError(null);
+    setNote(undefined);
+    setResults([]);
+    try {
+      const result = await identifyCoverWithAi(file, setStatus);
+      setPhotoUrl(result.photoUrl);
+      setResults(result.candidates);
+      setNote(result.note);
+      if (result.candidates.length === 0) {
+        setError('AI tuhle knihu nepoznala. Napište název do pole výše, nebo knihu zapište ručně.');
+      }
+    } catch (err) {
+      console.error(err);
+      setError(err instanceof AiCoverError ? err.message : 'Fotku se nepodařilo zpracovat. Zkuste to znovu.');
+    } finally {
+      setPhase('results');
+    }
+  };
+
+  const runTextSearch = async () => {
+    if (!query.trim()) return;
+    setPhase('working');
     setStatus('Hledám knihu v databázích…');
     setError(null);
+    setNote(undefined);
     try {
-      let found: BookCandidate[] = [];
-      for (const text of queries) {
-        found = await searchBooksByText(text);
-        if (found.length > 0) {
-          setQuery(text);
-          break;
-        }
-      }
+      const found = await searchBooksByText(query);
       setResults(found);
-      if (found.length === 0) {
-        setError('Žádná kniha neodpovídá. Opravte text (stačí název, případně příjmení autora) a zkuste to znovu.');
-      }
+      if (found.length === 0) setError('Žádná kniha neodpovídá. Zkuste jen název, případně příjmení autora.');
     } catch (err) {
       setResults([]);
       setError(err instanceof Error ? err.message : 'Vyhledávání se nepovedlo.');
@@ -71,35 +94,11 @@ export const CoverPhotoSearch: React.FC<CoverPhotoSearchProps> = ({ books, onPic
     }
   };
 
-  const handlePhoto = async (file: File | undefined) => {
-    if (!file) return;
-    setPhase('reading');
-    setError(null);
-    setResults([]);
-    setLines([]);
-    try {
-      const read = await readCoverPhoto(file, setStatus);
-      setPhotoUrl(read.photoUrl);
-      setLines(read.lines);
-      setQuery(read.query);
-      if (!read.query) {
-        setError('Na fotce se nepodařilo přečíst žádný text. Zkuste obálku vyfotit zblízka a rovně, nebo název napište.');
-        setPhase('results');
-        return;
-      }
-      await runSearch(queryVariants(read.lines));
-    } catch (err) {
-      console.error(err);
-      setError('Fotku se nepodařilo zpracovat. Zkontrolujte internet (při prvním použití se stahují data pro čtení textu).');
-      setPhase('results');
-    }
-  };
-
   const reset = () => {
     setPhase('idle');
     setError(null);
+    setNote(undefined);
     setResults([]);
-    setLines([]);
     setQuery('');
     setPhotoUrl(undefined);
   };
@@ -111,20 +110,101 @@ export const CoverPhotoSearch: React.FC<CoverPhotoSearchProps> = ({ books, onPic
     <div className="w-full max-w-md mx-auto bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-5 space-y-4">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center space-x-2">
-          <Camera className="w-5 h-5 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />
+          <Sparkles className="w-5 h-5 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />
           <div>
-            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Podle obálky</h2>
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Podle obálky (AI)</h2>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Kniha nemá ISBN? Vyfoťte obálku a aplikace knihu zkusí najít.
+              Kniha nemá ISBN? Vyfoťte obálku a AI pozná, o jakou knihu jde – i podle obrázku.
             </p>
           </div>
         </div>
-        {phase !== 'idle' && !busy && (
-          <button type="button" onClick={reset} className="p-1 text-slate-400 hover:text-slate-600" aria-label="Začít znovu">
-            <X className="w-5 h-5" />
-          </button>
-        )}
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {phase !== 'idle' && !busy && (
+            <button type="button" onClick={reset} className="p-1 text-slate-400 hover:text-slate-600" aria-label="Začít znovu">
+              <X className="w-5 h-5" />
+            </button>
+          )}
+          {!keyMissing && (
+            <button
+              type="button"
+              onClick={() => setShowSettings((v) => !v)}
+              className="p-1 text-slate-400 hover:text-slate-600"
+              aria-label="Nastavení AI klíče"
+              aria-expanded={showSettings}
+            >
+              <Settings className="w-5 h-5" />
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* Nastavení klíče – zobrazí se, když klíč chybí, nebo po klepnutí na kolečko */}
+      {(keyMissing || showSettings) && (
+        <form
+          className="space-y-2 p-3 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900 text-xs text-slate-700 dark:text-slate-300"
+          onSubmit={(e) => {
+            e.preventDefault();
+            saveKey();
+          }}
+        >
+          <p className="flex items-center gap-1.5 font-semibold text-slate-900 dark:text-white">
+            <KeyRound className="w-4 h-4" />
+            {keyMissing ? 'Pro rozpoznávání je potřeba klíč k Google Gemini (zdarma)' : 'Klíč k Google Gemini'}
+          </p>
+          {keyMissing && (
+            <ol className="list-decimal pl-5 space-y-0.5">
+              <li>
+                Otevřete{' '}
+                <a
+                  href="https://aistudio.google.com/apikey"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-semibold text-indigo-700 dark:text-indigo-300 underline"
+                >
+                  aistudio.google.com/apikey
+                </a>{' '}
+                a přihlaste se Google účtem.
+              </li>
+              <li>Klepněte na „Create API key“ a klíč zkopírujte.</li>
+              <li>Vložte ho sem. Uloží se jen v tomto zařízení.</li>
+            </ol>
+          )}
+          <div className="flex gap-2">
+            <input
+              type="password"
+              autoComplete="off"
+              value={keyDraft}
+              onChange={(e) => setKeyDraft(e.target.value)}
+              placeholder={keyMissing ? 'Vložte klíč (začíná „AIza…“)' : 'Nový klíč'}
+              className={inputClass}
+              aria-label="Klíč k Gemini API"
+            />
+            <button
+              type="submit"
+              disabled={!keyDraft.trim()}
+              className="px-3 rounded-xl bg-indigo-600 text-white font-semibold disabled:opacity-50"
+            >
+              Uložit
+            </button>
+          </div>
+          {!keyMissing && (
+            <button
+              type="button"
+              onClick={() => {
+                setGeminiKey('');
+                setApiKey('');
+                setShowSettings(false);
+              }}
+              className="text-rose-700 dark:text-rose-400 underline"
+            >
+              Odebrat uložený klíč
+            </button>
+          )}
+          <p className="text-[11px] text-slate-500 dark:text-slate-400">
+            Fotka obálky se pošle ke zpracování Googlu. V bezplatné verzi ji Google může použít ke zlepšování svých modelů.
+          </p>
+        </form>
+      )}
 
       <input
         ref={fileRef}
@@ -141,28 +221,24 @@ export const CoverPhotoSearch: React.FC<CoverPhotoSearchProps> = ({ books, onPic
 
       <button
         type="button"
-        disabled={busy}
-        onPointerEnter={preloadCoverOcr}
-        onClick={() => {
-          preloadCoverOcr();
-          fileRef.current?.click();
-        }}
-        className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-sm font-semibold flex items-center justify-center gap-2 transition-colors"
+        disabled={busy || keyMissing}
+        onClick={() => fileRef.current?.click()}
+        className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-semibold flex items-center justify-center gap-2 transition-colors"
       >
         <Camera className="w-4 h-4" />
         {photoUrl ? 'Vyfotit znovu' : 'Vyfotit obálku'}
       </button>
 
-      {/* Text pro hledání – rozpoznaný z fotky, nebo napsaný */}
+      {/* Hledání podle napsaného názvu – funguje i bez AI klíče */}
       <form
         className="space-y-1"
         onSubmit={(e) => {
           e.preventDefault();
-          runSearch([query]);
+          runTextSearch();
         }}
       >
         <label htmlFor="cover-query" className="block text-xs font-medium text-slate-600 dark:text-slate-400">
-          {lines.length > 0 ? 'Přečtený text (můžete opravit)' : 'Nebo napište název / autora'}
+          Nebo napište název / autora
         </label>
         <div className="flex gap-2">
           <input
@@ -185,28 +261,18 @@ export const CoverPhotoSearch: React.FC<CoverPhotoSearchProps> = ({ books, onPic
         </div>
       </form>
 
-      {/* Další přečtené řádky – klepnutím se přidají do hledání */}
-      {lines.length > 1 && !busy && (
-        <div className="flex flex-wrap gap-1.5">
-          {lines.slice(0, 8).map((line) => (
-            <button
-              key={line.text}
-              type="button"
-              onClick={() => setQuery((q) => (q.includes(line.text) ? q : `${q} ${line.text}`.trim()))}
-              className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-700 text-[11px] text-slate-600 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-indigo-950"
-              title="Přidat do hledání"
-            >
-              + {line.text}
-            </button>
-          ))}
-        </div>
-      )}
-
       {busy && (
         <div className="flex items-center gap-2 text-xs font-medium text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/50 p-3 rounded-xl">
           <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" />
           <span>{status}</span>
         </div>
+      )}
+
+      {note && !busy && (
+        <p className="flex items-start gap-1.5 text-xs text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/60 p-3 rounded-xl">
+          <Sparkles className="w-4 h-4 flex-shrink-0 text-indigo-500" />
+          <span>{note}</span>
+        </p>
       )}
 
       {error && !busy && (
@@ -218,16 +284,19 @@ export const CoverPhotoSearch: React.FC<CoverPhotoSearchProps> = ({ books, onPic
 
       {phase === 'results' && results.length > 0 && (
         <div className="space-y-2">
-          <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">Která z nich je vaše kniha?</p>
-          <ul className="space-y-2 max-h-[28rem] overflow-y-auto pr-1">
+          <div className="flex items-center gap-3">
+            {photoUrl && (
+              <img src={photoUrl} alt="Vaše fotka obálky" className="w-10 h-[3.75rem] object-cover rounded-sm shadow flex-shrink-0" />
+            )}
+            <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">Která z nich je vaše kniha?</p>
+          </div>
+          <ul className="space-y-2">
             {results.map((c) => {
               const inLibrary = findInLibrary(c);
               const meta = [c.year, c.publisher, c.pageCount && `${c.pageCount} stran`].filter(Boolean).join(' · ');
+              const confidence = c.aiConfidence ? CONFIDENCE_LABEL[c.aiConfidence] : null;
               return (
-                <li
-                  key={c.id}
-                  className="flex items-center gap-3 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700"
-                >
+                <li key={c.id} className="flex items-center gap-3 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700">
                   <BookCover
                     title={c.title}
                     authors={c.authors}
@@ -241,15 +310,22 @@ export const CoverPhotoSearch: React.FC<CoverPhotoSearchProps> = ({ books, onPic
                       {c.authors.join(', ') || 'autor neuveden'}
                     </p>
                     {meta && <p className="text-[11px] text-slate-500 truncate">{meta}</p>}
-                    {inLibrary && (
-                      <button
-                        type="button"
-                        onClick={() => onSelectBook(inLibrary)}
-                        className="text-[11px] font-semibold text-amber-700 dark:text-amber-400 underline"
-                      >
-                        Už v knihovně je – zobrazit
-                      </button>
-                    )}
+                    <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                      {confidence && (
+                        <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-semibold ring-1 ring-inset ${confidence[1]}`}>
+                          {confidence[0]}
+                        </span>
+                      )}
+                      {inLibrary && (
+                        <button
+                          type="button"
+                          onClick={() => onSelectBook(inLibrary)}
+                          className="text-[11px] font-semibold text-amber-700 dark:text-amber-400 underline"
+                        >
+                          Už v knihovně je – zobrazit
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <button
                     type="button"
@@ -273,7 +349,7 @@ export const CoverPhotoSearch: React.FC<CoverPhotoSearchProps> = ({ books, onPic
         <button
           type="button"
           onClick={() => {
-            onManual(lines[0]?.text ?? query, photoUrl);
+            onManual(query, photoUrl);
             reset();
           }}
           className="w-full py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-sm font-medium flex items-center justify-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-700"
