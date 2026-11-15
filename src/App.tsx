@@ -8,6 +8,8 @@ import { BookList } from './components/BookList';
 import { BookDetailModal } from './components/BookDetailModal';
 import { RecentScansList } from './components/RecentScansList';
 import { ManualBookForm } from './components/ManualBookForm';
+import { CoverPhotoSearch } from './components/CoverPhotoSearch';
+import type { BookCandidate } from './services/coverSearch';
 import { BatchLiveBar, BatchSessionPanel } from './components/BatchSessionPanel';
 import { playFeedback, unlockAudio } from './utils/feedback';
 import { looksLikeBookCode, normalizeIsbn } from './utils/isbn';
@@ -44,6 +46,49 @@ export function App() {
   const handleManualBookAdd = (book: Book) => {
     addBook(book);
     showToast('success', `Kniha bez ISBN uložena: "${book.title}"`);
+  };
+
+  // Kniha bez ISBN nalezená podle fotky obálky.
+  const newBookWithoutIsbn = (fields: Omit<Book, 'id' | 'isbn' | 'addedAt'>): Book => ({
+    ...fields,
+    id: `bez-isbn-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    isbn: '',
+    addedAt: new Date().toISOString(),
+  });
+
+  const handleCoverPick = (candidate: BookCandidate, photoUrl?: string) => {
+    const book = newBookWithoutIsbn({
+      title: candidate.title,
+      authors: candidate.authors.length > 0 ? candidate.authors : ['Neznámý autor'],
+      publisher: candidate.publisher ?? '',
+      publishedDate: candidate.year ?? '',
+      pageCount: candidate.pageCount,
+      description: candidate.description ?? '',
+      language: candidate.language,
+      categories: candidate.categories ?? [],
+      // Fotka je obálka právě této knihy – má přednost před obrázkem z databáze.
+      coverUrl: photoUrl ?? candidate.coverUrl,
+      source: `${candidate.source} (podle obálky)`,
+    });
+    addBook(book);
+    showToast('success', `Kniha bez ISBN uložena: "${book.title}"`, {
+      label: 'Zkontrolovat',
+      onClick: () => {
+        openBook(book, { edit: true });
+        setNotification(null);
+      },
+    });
+  };
+
+  const handleCoverManual = (title: string, photoUrl?: string) => {
+    const book = newBookWithoutIsbn({
+      title: title.trim() || 'Kniha bez názvu',
+      authors: ['Neznámý autor'],
+      coverUrl: photoUrl,
+    });
+    addBook(book);
+    showToast('warning', 'Doplňte prosím název, autora a další údaje.');
+    openBook(book, { edit: true });
   };
 
   // ---------------------------------------------------------------------
@@ -477,6 +522,16 @@ export function App() {
                 />
               )}
 
+              {!batchMode && (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('manual')}
+                  className="block mx-auto text-xs font-semibold text-indigo-700 dark:text-indigo-300 underline underline-offset-2"
+                >
+                  Kniha nemá ISBN? Najít podle fotky obálky
+                </button>
+              )}
+
               {!batchMode && isLoading && (
                 <div className="flex items-center justify-center space-x-2 text-xs font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/50 p-3 rounded-2xl max-w-md mx-auto border border-indigo-100 dark:border-indigo-900">
                   <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
@@ -504,6 +559,13 @@ export function App() {
                 isLoading={isLoading}
                 initialValue={manualPrefill.value}
                 initialNote={manualPrefill.note}
+              />
+
+              <CoverPhotoSearch
+                books={books}
+                onPick={handleCoverPick}
+                onManual={handleCoverManual}
+                onSelectBook={(book) => openBook(book)}
               />
 
               <ManualBookForm
