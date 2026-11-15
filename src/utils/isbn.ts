@@ -56,3 +56,50 @@ export function formatIsbn(isbn: string): string {
   }
   return isbn;
 }
+
+/**
+ * Převede ISBN-10 na ISBN-13 (předpona 978 + nová kontrolní číslice).
+ */
+export function isbn10To13(isbn10: string): string | null {
+  const clean = normalizeIsbn(isbn10);
+  if (clean.length !== 10) return null;
+  const base = '978' + clean.slice(0, 9);
+  let sum = 0;
+  for (let i = 0; i < 12; i++) sum += parseInt(base[i], 10) * (i % 2 === 0 ? 1 : 3);
+  return base + ((10 - (sum % 10)) % 10);
+}
+
+/**
+ * Převede ISBN-13 na ISBN-10. Jde jen u předpony 978 (ISBN začínající 979
+ * žádnou desetimístnou podobu nemají).
+ */
+export function isbn13To10(isbn13: string): string | null {
+  const clean = normalizeIsbn(isbn13);
+  if (clean.length !== 13 || !clean.startsWith('978')) return null;
+  const base = clean.slice(3, 12);
+  let sum = 0;
+  for (let i = 0; i < 9; i++) sum += (10 - i) * parseInt(base[i], 10);
+  const check = (11 - (sum % 11)) % 11;
+  return base + (check === 10 ? 'X' : String(check));
+}
+
+/**
+ * Obě podoby ISBN – nejdřív 13místná, pak 10místná (pokud existuje).
+ * Databáze mají knihu někdy uloženou jen pod jednou z nich.
+ */
+export function isbnVariants(isbn: string): string[] {
+  const clean = normalizeIsbn(isbn);
+  const isbn13 = clean.length === 13 ? clean : isbn10To13(clean);
+  const isbn10 = clean.length === 10 ? clean : isbn13To10(clean);
+  return [isbn13, isbn10].filter((v): v is string => Boolean(v));
+}
+
+/**
+ * Je to čárový kód knihy? EAN-13 knih vždy začíná 978 nebo 979.
+ * Jiné kódy (např. 859… na zboží nebo časopisech) nejsou ISBN.
+ */
+export function looksLikeBookCode(isbn: string): boolean {
+  const clean = normalizeIsbn(isbn);
+  if (clean.length === 10) return true;
+  return clean.length === 13 && (clean.startsWith('978') || clean.startsWith('979'));
+}

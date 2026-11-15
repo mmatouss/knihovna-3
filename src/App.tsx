@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import type { BatchItem, Book, ScanMode } from './types/book';
 import { useBookStorage } from './hooks/useBookStorage';
-import { enrichBook, fetchBookByIsbn } from './services/bookApi';
+import { enrichBook, fetchBookByIsbn, lookupBookByIsbn } from './services/bookApi';
 import { BarcodeScanner } from './components/BarcodeScanner';
 import { ManualIsbnInput } from './components/ManualIsbnInput';
 import { BookList } from './components/BookList';
@@ -10,7 +10,7 @@ import { RecentScansList } from './components/RecentScansList';
 import { ManualBookForm } from './components/ManualBookForm';
 import { BatchLiveBar, BatchSessionPanel } from './components/BatchSessionPanel';
 import { playFeedback, unlockAudio } from './utils/feedback';
-import { normalizeIsbn } from './utils/isbn';
+import { looksLikeBookCode, normalizeIsbn } from './utils/isbn';
 import { copiesLabel, findBookByIsbn, findOtherEditions, getCopies } from './utils/bookMatching';
 import { Camera, Keyboard, Library, CheckCircle2, AlertCircle } from 'lucide-react';
 
@@ -123,6 +123,13 @@ export function App() {
       }
     };
 
+    // Čárový kód, který není ISBN (např. 859… na časopisu) – nic nehledáme.
+    if (!looksLikeBookCode(clean)) {
+      updateBatchItem(itemId, { status: 'error' });
+      playFeedback('error', soundOn);
+      return;
+    }
+
     const existing = findBookByIsbn(clean, booksRef.current);
     if (existing) {
       handleExisting(existing);
@@ -233,6 +240,18 @@ export function App() {
   const handleIsbnDetected = useCallback(
     async (isbn: string) => {
       if (isLoading) return;
+
+      // Čárový kód, který není ISBN (EAN knihy vždy začíná 978 nebo 979).
+      if (!looksLikeBookCode(isbn)) {
+        showToast('warning', `Kód ${normalizeIsbn(isbn)} není ISBN knihy. Najděte na knize čárový kód začínající 978 nebo 979, nebo zadejte ISBN ručně.`, {
+          label: 'Zadat ručně',
+          onClick: () => {
+            goToManualEntry();
+            setNotification(null);
+          },
+        });
+        return;
+      }
       setIsLoading(true);
 
       try {
@@ -246,7 +265,7 @@ export function App() {
           return;
         }
 
-        const fetchedBook = await fetchBookByIsbn(isbn);
+        const { book: fetchedBook, offline } = await lookupBookByIsbn(isbn);
         const result = addBook(fetchedBook);
         const otherEditions = result.isDuplicate ? [] : findOtherEditions(fetchedBook, books);
 
@@ -255,7 +274,12 @@ export function App() {
           openBook(result.book, { duplicate: true });
         } else if (fetchedBook.metadataMissing) {
           // Kniha není v žádné databázi – necháme knihovníka doplnit údaje ručně.
-          showToast('warning', `Kniha s ISBN ${isbn} nebyla v databázích nalezena. Doplňte název a autora.`);
+          showToast(
+            'warning',
+            offline
+              ? 'Nepodařilo se spojit s databázemi knih (zkontrolujte internet). Údaje doplňte ručně, nebo později tlačítkem „Doplnit z internetu“.'
+              : `Kniha s ISBN ${isbn} nebyla v databázích nalezena. Doplňte prosím údaje ručně.`
+          );
           openBook(fetchedBook, { edit: true });
         } else if (otherEditions.length > 0) {
           // Stejná kniha, ale jiné vydání (jiné ISBN) – uložíme jako samostatný záznam.
@@ -266,11 +290,24 @@ export function App() {
             { label: 'Zobrazit', onClick: () => { openBook(fetchedBook); setNotification(null); } }
           );
         } else {
-          showToast('success', `Přidáno a uloženo: "${fetchedBook.title}"`);
+          const missing = [
+            fetchedBook.authors.every((a) => a === 'Neznámý autor') && 'autor',
+            !fetchedBook.pageCount && 'počet stran',
+            !fetchedBook.description && 'popis',
+          ].filter(Boolean);
+          showToast(
+            'success',
+            missing.length > 0
+              ? `Přidáno: "${fetchedBook.title}". Nenašlo se: ${missing.join(', ')} – můžete doplnit ručně.`
+              : `Přidáno a uloženo: "${fetchedBook.title}"`,
+            missing.length > 0
+              ? { label: 'Doplnit', onClick: () => { openBook(fetchedBook, { edit: true }); setNotification(null); } }
+              : undefined
+          );
         }
       } catch (err) {
         console.error(err);
-        showToast('error', 'Nepodařilo se načíst informace o knize.');
+        showToast('error', 'Nepodařilo se načíst informace o knize. Zkuste to znovu, nebo knihu zapište ručně.');
       } finally {
         setIsLoading(false);
       }
