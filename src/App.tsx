@@ -9,6 +9,7 @@ import { BookDetailModal } from './components/BookDetailModal';
 import { RecentScansList } from './components/RecentScansList';
 import { ManualBookForm } from './components/ManualBookForm';
 import { CoverPhotoSearch } from './components/CoverPhotoSearch';
+import { AiCoverSheet } from './components/AiCoverSheet';
 import type { BookCandidate } from './services/coverSearch';
 import { BatchLiveBar, BatchSessionPanel } from './components/BatchSessionPanel';
 import { playFeedback, unlockAudio } from './utils/feedback';
@@ -55,6 +56,9 @@ export function App() {
     isbn: '',
     addedAt: new Date().toISOString(),
   });
+
+  // Fotka obálky ze skeneru čekající na rozpoznání AI (null = okno zavřené).
+  const [aiPhoto, setAiPhoto] = useState<Blob | null>(null);
 
   const handleCoverPick = (candidate: BookCandidate, photoUrl?: string) => {
     const book = newBookWithoutIsbn({
@@ -468,43 +472,52 @@ export function App() {
         <div className="mt-2 space-y-4">
           {activeTab === 'camera' && (
             <div className="space-y-4">
-              <div className="text-center space-y-1 pt-1">
-                <h2 className="text-2xl font-semibold text-slate-900 dark:text-white">Naskenujte knihu</h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mx-auto">
-                  Namiřte kameru na čárový kód nebo číslo ISBN. Kniha se sama uloží do katalogu.
-                </p>
+              {/* Nadpis + přepínač rychlého skenování na jednom řádku */}
+              <div className="w-full max-w-md mx-auto flex items-end justify-between gap-3 pt-1">
+                <div className="min-w-0">
+                  <h2 className="text-2xl font-semibold text-slate-900 dark:text-white leading-tight">Naskenujte knihu</h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Čárový kód, číslo ISBN, nebo obálka s AI.
+                  </p>
+                </div>
+                <label
+                  className={`flex-shrink-0 flex items-center gap-2 pl-3 pr-1.5 py-1.5 rounded-full border cursor-pointer select-none transition-colors ${
+                    batchMode
+                      ? 'bg-indigo-600 border-indigo-600 text-white'
+                      : 'bg-white/90 dark:bg-slate-800/90 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
+                  }`}
+                  title="Kniha za knihou bez vyskakovacích oken – jen pípnutí"
+                >
+                  <span className="text-xs font-semibold">Rychlé</span>
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    className="sr-only peer"
+                    checked={batchMode}
+                    onChange={(e) => {
+                      if (e.target.checked) unlockAudio();
+                      setBatchMode(e.target.checked);
+                    }}
+                    aria-label="Rychlé skenování – kniha za knihou bez vyskakovacích oken"
+                  />
+                  <span className="relative w-9 h-5 rounded-full bg-slate-300 dark:bg-slate-600 peer-checked:bg-white/30 peer-focus-visible:ring-2 peer-focus-visible:ring-indigo-400 transition-colors after:absolute after:top-0.5 after:left-0.5 after:w-4 after:h-4 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:after:translate-x-4" />
+                </label>
               </div>
-
-              {/* Přepínač rychlého skenování */}
-              <label className="w-full max-w-md mx-auto flex items-center justify-between gap-3 bg-white/90 dark:bg-slate-800/90 rounded-2xl p-3.5 border border-slate-200/80 dark:border-slate-700 cursor-pointer select-none">
-                <span>
-                  <span className="block text-sm font-semibold text-slate-900 dark:text-white">Rychlé skenování</span>
-                  <span className="block text-xs text-slate-500 dark:text-slate-400">
-                    Kniha za knihou bez vyskakovacích oken – jen pípnutí.
-                  </span>
-                </span>
-                <input
-                  type="checkbox"
-                  role="switch"
-                  className="sr-only peer"
-                  checked={batchMode}
-                  onChange={(e) => {
-                    if (e.target.checked) unlockAudio();
-                    setBatchMode(e.target.checked);
-                  }}
-                  aria-label="Rychlé skenování"
-                />
-                <span className="relative flex-shrink-0 w-11 h-6 rounded-full bg-slate-300 dark:bg-slate-600 peer-checked:bg-indigo-600 peer-focus-visible:ring-2 peer-focus-visible:ring-indigo-400 transition-colors after:absolute after:top-0.5 after:left-0.5 after:w-5 after:h-5 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:after:translate-x-5" />
-              </label>
+              {batchMode && (
+                <p className="max-w-md mx-auto -mt-2 text-[11px] text-indigo-700 dark:text-indigo-300">
+                  Rychlé skenování: kniha za knihou bez vyskakovacích oken – jen pípnutí.
+                </p>
+              )}
 
               {batchMode && <BatchLiveBar items={batchItems} onUndo={handleBatchUndo} />}
 
               <BarcodeScanner
                 onScanSuccess={batchMode ? handleBatchScan : handleIsbnDetected}
                 isScanningActive={activeTab === 'camera'}
-                isPaused={selectedBook !== null || (!batchMode && isLoading)}
+                isPaused={selectedBook !== null || aiPhoto !== null || (!batchMode && isLoading)}
                 repeatDelayMs={batchMode ? 2000 : 5000}
                 onManualEntry={goToManualEntry}
+                onCoverPhoto={setAiPhoto}
               />
 
               {batchMode && (
@@ -526,15 +539,6 @@ export function App() {
                 />
               )}
 
-              {!batchMode && (
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('manual')}
-                  className="block mx-auto text-xs font-semibold text-indigo-700 dark:text-indigo-300 underline underline-offset-2"
-                >
-                  Kniha nemá ISBN? Najít podle fotky obálky
-                </button>
-              )}
 
               {!batchMode && isLoading && (
                 <div className="flex items-center justify-center space-x-2 text-xs font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/50 p-3 rounded-2xl max-w-md mx-auto border border-indigo-100 dark:border-indigo-900">
@@ -630,6 +634,27 @@ export function App() {
           })}
         </div>
       </nav>
+
+      {/* Výsledky AI po vyfocení obálky ve skeneru */}
+      {aiPhoto && (
+        <AiCoverSheet
+          photo={aiPhoto}
+          books={books}
+          onClose={() => setAiPhoto(null)}
+          onPick={(candidate, photoUrl) => {
+            setAiPhoto(null);
+            handleCoverPick(candidate, photoUrl);
+          }}
+          onManual={(title, photoUrl) => {
+            setAiPhoto(null);
+            handleCoverManual(title, photoUrl);
+          }}
+          onSelectBook={(book) => {
+            setAiPhoto(null);
+            openBook(book);
+          }}
+        />
+      )}
 
       {/* Detail Modal */}
       <BookDetailModal

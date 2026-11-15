@@ -1,8 +1,7 @@
 import React, { useRef, useState } from 'react';
-import { Camera, Search, Loader2, AlertCircle, PenLine, X, Check, Settings, Sparkles, KeyRound } from 'lucide-react';
+import { Camera, Search, Loader2, AlertCircle, PenLine, X, Settings, Sparkles, KeyRound } from 'lucide-react';
 import type { Book } from '../types/book';
-import { BookCover } from './BookCover';
-import { normalizeText } from '../utils/bookMatching';
+import { CandidateList } from './CandidateList';
 import { searchBooksByText, type BookCandidate } from '../services/coverSearch';
 import { AiCoverError, HAS_BUILT_IN_KEY, getGeminiKey, identifyCoverWithAi, setGeminiKey } from '../services/aiCover';
 
@@ -21,11 +20,6 @@ type Phase = 'idle' | 'working' | 'results';
 const inputClass =
   'w-full px-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all text-sm';
 
-const CONFIDENCE_LABEL = {
-  high: ['AI: jistě', 'bg-emerald-50 text-emerald-800 ring-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:ring-emerald-800'],
-  medium: ['AI: asi', 'bg-sky-50 text-sky-800 ring-sky-200 dark:bg-sky-950/60 dark:text-sky-300 dark:ring-sky-800'],
-  low: ['AI: tip', 'bg-slate-100 text-slate-600 ring-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:ring-slate-600'],
-} as const;
 
 /**
  * Kniha bez ISBN: vyfoťte obálku a AI (Google Gemini) podle vzhledu
@@ -102,9 +96,6 @@ export const CoverPhotoSearch: React.FC<CoverPhotoSearchProps> = ({ books, onPic
     setQuery('');
     setPhotoUrl(undefined);
   };
-
-  const findInLibrary = (candidate: BookCandidate) =>
-    books.find((b) => normalizeText(b.title) === normalizeText(candidate.title));
 
   return (
     <div className="w-full max-w-md mx-auto bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-5 space-y-4">
@@ -295,58 +286,15 @@ export const CoverPhotoSearch: React.FC<CoverPhotoSearchProps> = ({ books, onPic
             )}
             <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">Která z nich je vaše kniha?</p>
           </div>
-          <ul className="space-y-2">
-            {results.map((c) => {
-              const inLibrary = findInLibrary(c);
-              const meta = [c.year, c.publisher, c.pageCount && `${c.pageCount} stran`].filter(Boolean).join(' · ');
-              const confidence = c.aiConfidence ? CONFIDENCE_LABEL[c.aiConfidence] : null;
-              return (
-                <li key={c.id} className="flex items-center gap-3 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700">
-                  <BookCover
-                    title={c.title}
-                    authors={c.authors}
-                    coverUrl={c.coverUrl}
-                    variant="compact"
-                    className="w-10 h-[3.75rem] flex-shrink-0"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-slate-900 dark:text-white leading-snug line-clamp-2">{c.title}</p>
-                    <p className="text-xs text-slate-600 dark:text-slate-400 truncate">
-                      {c.authors.join(', ') || 'autor neuveden'}
-                    </p>
-                    {meta && <p className="text-[11px] text-slate-500 truncate">{meta}</p>}
-                    <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
-                      {confidence && (
-                        <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-semibold ring-1 ring-inset ${confidence[1]}`}>
-                          {confidence[0]}
-                        </span>
-                      )}
-                      {inLibrary && (
-                        <button
-                          type="button"
-                          onClick={() => onSelectBook(inLibrary)}
-                          className="text-[11px] font-semibold text-amber-700 dark:text-amber-400 underline"
-                        >
-                          Už v knihovně je – zobrazit
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onPick(c, photoUrl);
-                      reset();
-                    }}
-                    className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center gap-1 flex-shrink-0"
-                  >
-                    <Check className="w-3.5 h-3.5" />
-                    Vybrat
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
+          <CandidateList
+            candidates={results}
+            books={books}
+            onSelectBook={onSelectBook}
+            onPick={(c) => {
+              onPick(c, photoUrl);
+              reset();
+            }}
+          />
         </div>
       )}
 

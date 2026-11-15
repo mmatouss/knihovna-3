@@ -323,7 +323,7 @@ const CONFIDENCE_ORDER = { high: 0, medium: 1, low: 2 } as const;
 /** Pošle fotku obálky AI a vrátí nalezené knihy. */
 export async function identifyCoverWithAi(file: Blob, onStatus?: (status: string) => void): Promise<AiCoverResult> {
   const key = getGeminiKey();
-  if (!key) throw new AiCoverError('Nejdřív vložte klíč k Gemini API.');
+  if (!key) throw new AiCoverError('Nejdřív vložte klíč k Gemini API (záložka Ručně → Podle obálky).');
 
   const img = await loadImage(file);
   const photoUrl = toJpeg(img, 300, 0.7);

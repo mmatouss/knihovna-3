@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { BrowserMultiFormatReader } from '@zxing/browser';
 import { BarcodeFormat, DecodeHintType } from '@zxing/library';
-import { Camera, SwitchCamera, AlertTriangle, RefreshCw, Zap, ZapOff, ScanText, Keyboard } from 'lucide-react';
+import { SwitchCamera, AlertTriangle, RefreshCw, Zap, ZapOff, ScanText, Keyboard, Sparkles } from 'lucide-react';
 import { normalizeIsbn } from '../utils/isbn';
 import { OCR_VARIANTS, preloadIsbnOcr, readIsbnFromImage } from '../services/isbnOcr';
 
@@ -23,6 +23,24 @@ interface BarcodeScannerProps {
    * `prefill` je částečně přečtené číslo, které stačí opravit.
    */
   onManualEntry?: (prefill?: string, note?: string) => void;
+  /** Vyfotí obálku z kamery a pošle ji k rozpoznání AI (kniha bez ISBN). */
+  onCoverPhoto?: (photo: Blob) => void;
+}
+
+/**
+ * Objektivy, které ke skenování knih nechceme: ultraširokoúhlý („0,5×“),
+ * teleobjektiv a „dvojité/trojité“ kamery iPhonu, které často startují na 0,5×.
+ * Hlavní zadní fotoaparát (1×) má popisek jen „Back Camera“ / „Zadní fotoaparát“.
+ */
+const ODD_LENS = /ultra|tele|dual|triple|du[aá]ln|trojit|široko|wide|0[.,]5/i;
+const FRONT_CAMERA = /front|přední|user|selfie|facetime|facing front/i;
+// Pozn.: „Back Dual Wide Camera“ obsahuje „wide“ – proto je ODD_LENS i na „wide“,
+// hlavní „Back Camera“ ho nemá.
+
+/** Kamery, mezi kterými dává smysl přepínat (bez zvláštních objektivů). */
+function usableCameras(cameras: Array<{ id: string; label: string }>) {
+  const normal = cameras.filter((c) => !ODD_LENS.test(c.label));
+  return normal.length > 0 ? normal : cameras;
 }
 
 // Kolikrát za sekundu zkoušíme přečíst čárový kód.
@@ -89,7 +107,7 @@ function captureScanRegion(
   return true;
 }
 
-export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, isScanningActive, isPaused = false, repeatDelayMs = 5000, onManualEntry }) => {
+export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, isScanningActive, isPaused = false, repeatDelayMs = 5000, onManualEntry, onCoverPhoto }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const onScanSuccessRef = useRef(onScanSuccess);
@@ -110,7 +128,6 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
   const [cameras, setCameras] = useState<Array<{ id: string; label: string }>>([]);
   // Prázdný řetězec = výchozí zadní kamera (facingMode: environment).
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
-  const [activeCameraLabel, setActiveCameraLabel] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState<boolean>(true);
   const [retryCounter, setRetryCounter] = useState<number>(0);
@@ -251,7 +268,6 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
         streamRef.current = stream;
 
         const track = stream.getVideoTracks()[0];
-        setActiveCameraLabel(track?.label || '');
 
         // Průběžné ostření, pokud ho kamera podporuje (hlavně Android).
         try {
@@ -278,11 +294,20 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
         try {
           const devices = await navigator.mediaDevices.enumerateDevices();
           if (!cancelled) {
-            setCameras(
-              devices
-                .filter((d) => d.kind === 'videoinput')
-                .map((d, i) => ({ id: d.deviceId, label: d.label || `Kamera ${i + 1}` }))
-            );
+            const list = devices
+              .filter((d) => d.kind === 'videoinput')
+              .map((d, i) => ({ id: d.deviceId, label: d.label || `Kamera ${i + 1}` }));
+            setCameras(list);
+            // Prohlížeč vybral ultraširokoúhlý / „trojitý“ objektiv (obraz na 0,5×,
+            // neostří zblízka) → přepneme na hlavní zadní fotoaparát.
+            const activeLabel = track?.label ?? '';
+            if (!selectedCameraId && ODD_LENS.test(activeLabel)) {
+              const main = list.find((c) => !ODD_LENS.test(c.label) && !FRONT_CAMERA.test(c.label));
+              if (main) {
+                setSelectedCameraId(main.id);
+                return; // kamera se spustí znovu s hlavním objektivem
+              }
+            }
           }
         } catch { /* ignore */ }
 
@@ -388,12 +413,25 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
     }
   };
 
+  const switchableCameras = usableCameras(cameras);
+
   const switchCamera = () => {
-    if (cameras.length <= 1) return;
+    if (switchableCameras.length <= 1) return;
     const currentId = selectedCameraId || streamRef.current?.getVideoTracks()[0]?.getSettings().deviceId || '';
-    const currentIndex = cameras.findIndex(c => c.id === currentId);
-    const nextIndex = (currentIndex + 1) % cameras.length;
-    setSelectedCameraId(cameras[nextIndex].id);
+    const currentIndex = switchableCameras.findIndex((c) => c.id === currentId);
+    const nextIndex = (currentIndex + 1) % switchableCameras.length;
+    setSelectedCameraId(switchableCameras[nextIndex].id);
+  };
+
+  /** Vyfotí aktuální obraz z kamery (celý, v plném rozlišení) pro AI. */
+  const takeCoverPhoto = () => {
+    const video = videoRef.current;
+    if (!video || !onCoverPhoto || !video.videoWidth) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d')!.drawImage(video, 0, 0);
+    canvas.toBlob((blob) => blob && onCoverPhoto(blob), 'image/jpeg', 0.9);
   };
 
   return (
@@ -407,6 +445,35 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
           muted
           playsInline
         />
+
+        {/* Svítilna a přepnutí kamery – kulatá tlačítka v rohu obrazu */}
+        {isScanningActive && !errorMsg && !isInitializing && (isTorchSupported || switchableCameras.length > 1) && (
+          <div className="absolute top-3 right-3 z-10 flex flex-col gap-2">
+            {isTorchSupported && (
+              <button
+                type="button"
+                onClick={toggleTorch}
+                className={`w-10 h-10 rounded-full flex items-center justify-center backdrop-blur-md transition-colors ${
+                  isTorchOn ? 'bg-amber-400 text-slate-950' : 'bg-black/50 text-white hover:bg-black/70'
+                }`}
+                aria-label={isTorchOn ? 'Vypnout svítilnu' : 'Zapnout svítilnu'}
+                aria-pressed={isTorchOn}
+              >
+                {isTorchOn ? <Zap className="w-5 h-5 fill-current" /> : <ZapOff className="w-5 h-5" />}
+              </button>
+            )}
+            {switchableCameras.length > 1 && (
+              <button
+                type="button"
+                onClick={switchCamera}
+                className="w-10 h-10 rounded-full bg-black/50 hover:bg-black/70 text-white flex items-center justify-center backdrop-blur-md transition-colors"
+                aria-label="Přepnout kameru"
+              >
+                <SwitchCamera className="w-5 h-5" />
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Visual Overlay for scanning line & target */}
         {isScanningActive && !errorMsg && !isInitializing && (
@@ -501,27 +568,44 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
         )}
       </div>
 
-      {/* Čtení vytištěného čísla (bez čárového kódu) */}
+      {/* Akce pod kamerou */}
       {isScanningActive && !errorMsg && !isInitializing && (
-        <div className="px-4 pt-4 bg-slate-900">
-          <button
-            type="button"
-            onClick={readPrintedIsbn}
-            onPointerEnter={preloadIsbnOcr}
-            onTouchStart={preloadIsbnOcr}
-            disabled={isReadingText}
-            className="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-900 disabled:text-indigo-300 text-white text-sm font-semibold rounded-xl flex items-center justify-center space-x-2 transition-all active:scale-[0.99]"
-          >
-            {isReadingText ? (
-              <RefreshCw className="w-4 h-4 animate-spin" />
-            ) : (
-              <ScanText className="w-4 h-4" />
+        <div className="p-3 space-y-2.5 bg-slate-900">
+          <div className={`grid gap-2.5 ${onCoverPhoto ? 'grid-cols-2' : 'grid-cols-1'}`}>
+            <button
+              type="button"
+              onClick={readPrintedIsbn}
+              onPointerEnter={preloadIsbnOcr}
+              onTouchStart={preloadIsbnOcr}
+              disabled={isReadingText}
+              className="min-h-[4.25rem] px-3 py-2.5 rounded-2xl bg-slate-800 hover:bg-slate-700 active:scale-[0.98] disabled:opacity-60 text-left flex items-center gap-2.5 transition-all"
+            >
+              <span className="w-9 h-9 rounded-xl bg-slate-700 flex items-center justify-center flex-shrink-0">
+                {isReadingText ? <RefreshCw className="w-4.5 h-4.5 animate-spin" /> : <ScanText className="w-4.5 h-4.5" />}
+              </span>
+              <span className="min-w-0">
+                <span className="block text-[13px] font-semibold leading-tight">
+                  {isReadingText ? 'Čtu číslo…' : 'Přečíst číslo'}
+                </span>
+                <span className="block text-[11px] text-slate-400 leading-tight mt-0.5">ISBN bez čárového kódu</span>
+              </span>
+            </button>
+            {onCoverPhoto && (
+              <button
+                type="button"
+                onClick={takeCoverPhoto}
+                className="min-h-[4.25rem] px-3 py-2.5 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 hover:from-indigo-400 hover:to-violet-500 active:scale-[0.98] text-left flex items-center gap-2.5 shadow-lg shadow-indigo-900/40 transition-all"
+              >
+                <span className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+                  <Sparkles className="w-4.5 h-4.5" />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-[13px] font-semibold leading-tight">Vyfotit obálku s AI</span>
+                  <span className="block text-[11px] text-indigo-100/90 leading-tight mt-0.5">Kniha nemá ISBN</span>
+                </span>
+              </button>
             )}
-            <span>{isReadingText ? 'Čtu číslo…' : 'Přečíst vytištěné číslo ISBN'}</span>
-          </button>
-          <p className="mt-1.5 text-[10px] text-slate-400 text-center">
-            Vytištěné číslo ISBN se zkouší číst i samo. Když to nejde, zmáčkněte tlačítko.
-          </p>
+          </div>
           {onManualEntry && (
             <button
               type="button"
@@ -533,70 +617,18 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
                     : 'Čárový kód ani číslo se nepodařilo načíst. Opište ISBN z knihy.'
                 )
               }
-              className={`mt-3 w-full py-2 px-4 rounded-xl text-xs font-semibold flex items-center justify-center space-x-2 transition-all ${
+              className={`w-full py-2 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-colors ${
                 textReadGuess
                   ? 'bg-amber-500 hover:bg-amber-600 text-slate-950'
-                  : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
               }`}
             >
               <Keyboard className="w-4 h-4" />
-              <span>
-                {textReadGuess ? `Opravit ručně: ${textReadGuess}` : 'Nejde to načíst? Zadat ISBN ručně'}
-              </span>
+              <span>{textReadGuess ? `Opravit ručně: ${textReadGuess}` : 'Zadat ISBN ručně'}</span>
             </button>
           )}
         </div>
       )}
-
-      {/* Control bar */}
-      <div className="p-4 bg-slate-900 flex items-center justify-between">
-        <div className="flex items-center space-x-2 text-xs text-slate-400 min-w-0 pr-2">
-          <Camera className="w-4 h-4 text-indigo-400 flex-shrink-0" />
-          <span className="truncate">
-            {activeCameraLabel || (isInitializing ? 'Vyhledávání kamer...' : 'Kamera aktivní')}
-          </span>
-        </div>
-
-        <div className="flex items-center space-x-2 flex-shrink-0">
-          {/* Torch / Flashlight toggle button */}
-          {isScanningActive && isTorchSupported && (
-            <button
-              type="button"
-              onClick={toggleTorch}
-              className={`p-2 rounded-xl flex items-center space-x-1.5 text-xs font-medium transition-all ${
-                isTorchOn
-                  ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/20'
-                  : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
-              }`}
-              title={isTorchOn ? 'Vypnout svítilnu' : 'Zapnout svítilnu pro slabé osvětlení'}
-            >
-              {isTorchOn ? (
-                <>
-                  <Zap className="w-4 h-4 fill-current text-slate-950" />
-                  <span>Svítilna zapnuta</span>
-                </>
-              ) : (
-                <>
-                  <ZapOff className="w-4 h-4 text-slate-300" />
-                  <span>Svítilna</span>
-                </>
-              )}
-            </button>
-          )}
-
-          {cameras.length > 1 && (
-            <button
-              type="button"
-              onClick={switchCamera}
-              className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl flex items-center space-x-1 text-xs font-medium transition-colors"
-              title="Přepnout kameru"
-            >
-              <SwitchCamera className="w-4 h-4" />
-              <span className="hidden sm:inline">Přepnout</span>
-            </button>
-          )}
-        </div>
-      </div>
     </div>
   );
 };
