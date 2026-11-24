@@ -50,7 +50,7 @@ export const CandidateList: React.FC<CandidateListProps> = ({ candidates, books,
                 <button
                   type="button"
                   onClick={() => onSelectBook(inLibrary)}
-                  className="text-[11px] font-semibold text-amber-700 dark:text-amber-400 underline"
+                  className="py-1.5 text-[11px] font-semibold text-amber-700 dark:text-amber-400 underline text-left"
                 >
                   Už v knihovně je – zobrazit
                 </button>
@@ -70,7 +70,7 @@ export const CandidateList: React.FC<CandidateListProps> = ({ candidates, books,
               <button
                 type="button"
                 onClick={() => onPick(c)}
-                className="text-[11px] text-slate-500 dark:text-slate-400 underline"
+                className="py-2 text-[11px] text-slate-500 dark:text-slate-400 underline"
               >
                 Je to jiná kniha
               </button>

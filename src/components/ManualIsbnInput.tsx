@@ -99,7 +99,8 @@ export const ManualIsbnInput: React.FC<ManualIsbnInputProps> = ({
         <button
           type="button"
           onClick={() => setShowTips(!showTips)}
-          className="text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors p-1"
+          className="text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors p-2.5 -m-1.5 rounded-lg"
+          aria-label="Nápověda pro ruční zadání"
           title="Nápověda pro ruční zadání"
         >
           <HelpCircle className="w-5 h-5" />

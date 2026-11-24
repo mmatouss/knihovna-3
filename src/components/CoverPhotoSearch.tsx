@@ -113,7 +113,7 @@ export const CoverPhotoSearch: React.FC<CoverPhotoSearchProps> = ({ books, onPic
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
           {phase !== 'idle' && !busy && (
-            <button type="button" onClick={reset} className="p-1 text-slate-400 hover:text-slate-600" aria-label="Začít znovu">
+            <button type="button" onClick={reset} className="p-2.5 -m-1 text-slate-400 hover:text-slate-600 rounded-lg" aria-label="Začít znovu">
               <X className="w-5 h-5" />
             </button>
           )}
@@ -121,7 +121,7 @@ export const CoverPhotoSearch: React.FC<CoverPhotoSearchProps> = ({ books, onPic
             <button
               type="button"
               onClick={() => setShowSettings((v) => !v)}
-              className="p-1 text-slate-400 hover:text-slate-600"
+              className="p-2.5 -m-1 text-slate-400 hover:text-slate-600 rounded-lg"
               aria-label="Nastavení AI klíče"
               aria-expanded={showSettings}
             >
