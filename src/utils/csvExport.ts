@@ -1,4 +1,4 @@
-import type { Book } from '../types/book';
+import type { Book, Shelf } from '../types/book';
 import { formatIsbn } from './isbn';
 import { getCopies, languageName } from './bookMatching';
 
@@ -22,10 +22,11 @@ function isbnCell(isbn: string): string {
  * Converts a list of books into a downloadable CSV file.
  * Na začátek dává znak BOM (\uFEFF), aby Excel správně zobrazil češtinu.
  */
-export function exportBooksToCsv(books: Book[]): void {
+export function exportBooksToCsv(books: Book[], shelves: Shelf[] = []): void {
   if (books.length === 0) return;
+  const shelfName = new Map(shelves.map((s) => [s.id, s.name]));
 
-  const headers = ['ISBN', 'Formátované ISBN', 'Název', 'Autor(i)', 'Nakladatelství', 'Rok vydání', 'Vydání', 'Počet stran', 'Počet výtisků', 'Jazyk', 'Žánr', 'Popis', 'Poznámka', 'Datum přidání'];
+  const headers = ['ISBN', 'Formátované ISBN', 'Název', 'Autor(i)', 'Nakladatelství', 'Rok vydání', 'Vydání', 'Počet stran', 'Počet výtisků', 'Regál', 'Jazyk', 'Žánr', 'Popis', 'Poznámka', 'Datum přidání'];
 
   const rows = books.map((book) => {
     const added = new Date(book.addedAt);
@@ -39,6 +40,7 @@ export function exportBooksToCsv(books: Book[]): void {
       cell(book.edition),
       cell(book.pageCount),
       cell(getCopies(book)),
+      cell(book.shelfId ? shelfName.get(book.shelfId) : ''),
       cell(languageName(book.language)),
       cell((book.categories ?? []).join(', ')),
       cell(book.description),

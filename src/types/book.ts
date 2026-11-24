@@ -22,6 +22,17 @@ export interface Book {
   copies?: number;
   /** Údaje o knize se nepodařilo najít v databázích – je potřeba je doplnit ručně. */
   metadataMissing?: boolean;
+  /** Regál, ve kterém kniha stojí (id z `Shelf`); chybí = bez regálu. */
+  shelfId?: string;
+}
+
+/** Regál / kategorie, do které knihovník řadí knihy (např. „Pohádky“, „Regál A“). */
+export interface Shelf {
+  id: string;
+  name: string;
+  /** Barva štítku (hex), aby šel regál rychle poznat. */
+  color: string;
+  createdAt: string;
 }
 
 export interface ScanRecord {

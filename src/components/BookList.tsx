@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import type { Book } from '../types/book';
+import type { Book, Shelf } from '../types/book';
+import { ShelfBadge } from './ShelfBadge';
 import {
   Search,
   Download,
@@ -70,6 +71,10 @@ interface BookListProps {
   onSelectBook: (book: Book) => void;
   onClearAll: () => void;
   onNavigateToScan: () => void;
+  /** Regály – řada nahoře slouží jako hlavní filtr. */
+  shelves?: Shelf[];
+  /** Otevře správu regálů. */
+  onManageShelves?: () => void;
 }
 
 export const BookList: React.FC<BookListProps> = ({
@@ -77,8 +82,23 @@ export const BookList: React.FC<BookListProps> = ({
   onSelectBook,
   onClearAll,
   onNavigateToScan,
+  shelves = [],
+  onManageShelves,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
+  // Vybraný regál: 'all' = všechny knihy, 'none' = bez regálu, jinak id regálu.
+  const [shelfFilter, setShelfFilter] = useState<string>('all');
+  const shelfById = useMemo(() => new Map(shelves.map((s) => [s.id, s])), [shelves]);
+  // Smazaný regál → zpět na všechny knihy.
+  const activeShelf = shelfFilter === 'all' || shelfFilter === 'none' || shelfById.has(shelfFilter) ? shelfFilter : 'all';
+  const shelfCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const b of books) {
+      const key = b.shelfId && shelfById.has(b.shelfId) ? b.shelfId : 'none';
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return counts;
+  }, [books, shelfById]);
   // Výchozí je galerie obálek; volbu si pamatujeme v tomto zařízení.
   const [viewMode, setViewModeState] = useState<'grid' | 'list'>(() => {
     try {
@@ -143,12 +163,18 @@ export const BookList: React.FC<BookListProps> = ({
 
   const filteredBooks = books
     .filter((b) => {
+      // Regál (řada štítků nahoře).
+      const bookShelf = b.shelfId && shelfById.has(b.shelfId) ? b.shelfId : 'none';
+      if (activeShelf !== 'all' && bookShelf !== activeShelf) return false;
+
       // Fulltextové hledání (bez ohledu na diakritiku a velikost písmen).
       const q = normalizeText(searchQuery);
       if (q) {
         const isbnQuery = searchQuery.replace(/[\s-]/g, '').toLowerCase();
         const haystack = normalizeText(
-          [b.title, ...b.authors, b.publisher, b.edition, b.notes, b.publishedDate].filter(Boolean).join(' ')
+          [b.title, ...b.authors, b.publisher, b.edition, b.notes, b.publishedDate, b.shelfId && shelfById.get(b.shelfId)?.name]
+            .filter(Boolean)
+            .join(' ')
         );
         const matches =
           haystack.includes(q) ||
@@ -197,7 +223,7 @@ export const BookList: React.FC<BookListProps> = ({
       return 0;
     });
 
-  const isFiltering = activeFilterCount > 0 || searchQuery.trim() !== '';
+  const isFiltering = activeFilterCount > 0 || searchQuery.trim() !== '' || activeShelf !== 'all';
   const totalCopies = books.reduce((sum, b) => sum + getCopies(b), 0);
 
   return (
@@ -219,7 +245,7 @@ export const BookList: React.FC<BookListProps> = ({
               <>
                 <button
                   type="button"
-                  onClick={() => exportBooksToCsv(filteredBooks)}
+                  onClick={() => exportBooksToCsv(filteredBooks, shelves)}
                   disabled={filteredBooks.length === 0}
                   className="disabled:opacity-50 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white dark:bg-indigo-600 dark:hover:bg-indigo-500 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-colors shadow-xs"
                   title="Exportovat zobrazené knihy do CSV (Excel)"
@@ -328,6 +354,50 @@ export const BookList: React.FC<BookListProps> = ({
                   <Grid className="w-4 h-4" />
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Regály – řada štítků; vodorovně se posouvá, když se nevejde */}
+        {books.length > 0 && (
+          <div className="pt-3 border-t border-slate-100 dark:border-slate-700/60">
+            <div className="flex items-center gap-1.5 overflow-x-auto -mx-1 px-1 pb-1 [scrollbar-width:none]" role="tablist" aria-label="Regály">
+              {(
+                [
+                  ['all', 'Vše', books.length, undefined],
+                  ...shelves.map((sh) => [sh.id, sh.name, shelfCounts.get(sh.id) ?? 0, sh.color] as const),
+                  ...(shelves.length > 0 ? [['none', 'Bez regálu', shelfCounts.get('none') ?? 0, undefined] as const] : []),
+                ] as Array<readonly [string, string, number, string | undefined]>
+              ).map(([key, label, count, color]) => {
+                const active = activeShelf === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => setShelfFilter(key)}
+                    className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-full border text-xs font-medium whitespace-nowrap transition-colors ${
+                      active
+                        ? 'bg-slate-900 border-slate-900 text-white dark:bg-white dark:border-white dark:text-slate-900'
+                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
+                    }`}
+                  >
+                    {color && <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }} aria-hidden="true" />}
+                    <span>{label}</span>
+                    <span className={active ? 'opacity-70' : 'text-slate-400'}>{count}</span>
+                  </button>
+                );
+              })}
+              {onManageShelves && (
+                <button
+                  type="button"
+                  onClick={onManageShelves}
+                  className="flex-shrink-0 flex items-center gap-1 px-3 py-2 rounded-full border border-dashed border-slate-300 dark:border-slate-600 text-xs font-medium text-indigo-700 dark:text-indigo-300 whitespace-nowrap hover:border-indigo-400"
+                >
+                  {shelves.length === 0 ? '+ Rozdělit do regálů' : 'Upravit regály'}
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -493,8 +563,11 @@ export const BookList: React.FC<BookListProps> = ({
             const copies = getCopies(book);
             const editions = editionCounts.get(book.id) ?? 1;
             const meta = [book.publishedDate, book.publisher].filter(Boolean).join(' · ');
+            const shelf = book.shelfId ? shelfById.get(book.shelfId) : undefined;
             const badges = (
               <>
+                {/* Regál ukazujeme, jen když se nedíváme do jednoho konkrétního regálu. */}
+                {shelf && activeShelf === 'all' && <ShelfBadge shelf={shelf} />}
                 {copies > 1 && (
                   <span className="px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-700/70 text-[10px] font-semibold text-slate-700 dark:text-slate-200">
                     {copies}× výtisk
