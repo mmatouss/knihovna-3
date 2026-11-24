@@ -4,6 +4,7 @@ import { useBookStorage } from './hooks/useBookStorage';
 import { useShelves } from './hooks/useShelves';
 import { ShelfManager } from './components/ShelfManager';
 import { ShelfSelect } from './components/ShelfSelect';
+import { ShelvesView } from './components/ShelvesView';
 import { enrichBook, fetchBookByIsbn, lookupBookByIsbn } from './services/bookApi';
 import { BarcodeScanner } from './components/BarcodeScanner';
 import { ManualIsbnInput } from './components/ManualIsbnInput';
@@ -44,6 +45,8 @@ export function App() {
   // ---------------------------------------------------------------------
   const { shelves, addShelf, updateShelf, deleteShelf } = useShelves();
   const [showShelfManager, setShowShelfManager] = useState(false);
+  // Regál vybraný v knihovně ('all' = vše) – nastaví ho i klepnutí na regál v záložce Regály.
+  const [libraryShelf, setLibraryShelf] = useState('all');
   // Regál, do kterého se ukládají nově naskenované/zapsané knihy ('' = nezařazovat).
   // Hodí se při katalogizaci police po polici. Pamatuje se v tomto zařízení.
   const [scanShelfIdRaw, setScanShelfId] = useState(() => {
@@ -522,7 +525,7 @@ export function App() {
         )}
 
         {/* Desktop Tab Selector */}
-        <div className="hidden sm:flex bg-slate-200/50 dark:bg-slate-800/80 p-1 rounded-full max-w-md mx-auto border border-slate-200/70 dark:border-slate-700">
+        <div className="hidden sm:flex bg-slate-200/50 dark:bg-slate-800/80 p-1 rounded-full max-w-xl mx-auto border border-slate-200/70 dark:border-slate-700">
           <button
             onClick={() => setActiveTab('camera')}
             className={`flex-1 py-2 rounded-full text-xs font-semibold flex items-center justify-center space-x-2 transition-all ${
@@ -544,6 +547,17 @@ export function App() {
           >
             <Keyboard className="w-4 h-4" />
             <span>Ruční zadání</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('shelves')}
+            className={`flex-1 py-2 rounded-full text-xs font-semibold flex items-center justify-center space-x-2 transition-all ${
+              activeTab === 'shelves'
+                ? 'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-sm'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <LibraryBig className="w-4 h-4" />
+            <span>Regály</span>
           </button>
           <button
             onClick={() => setActiveTab('list')}
@@ -705,11 +719,27 @@ export function App() {
             </div>
           )}
 
+          {activeTab === 'shelves' && (
+            <ShelvesView
+              shelves={shelves}
+              books={books}
+              onManage={() => setShowShelfManager(true)}
+              onAdd={addShelf}
+              onOpenShelf={(key) => {
+                setLibraryShelf(key);
+                setActiveTab('list');
+                window.scrollTo(0, 0);
+              }}
+            />
+          )}
+
           {activeTab === 'list' && (
             <BookList
               books={books}
               shelves={shelves}
               onManageShelves={() => setShowShelfManager(true)}
+              shelfFilter={libraryShelf}
+              onShelfFilterChange={setLibraryShelf}
               onSelectBook={(book) => openBook(book)}
               onClearAll={clearAllBooks}
               onNavigateToScan={() => setActiveTab('camera')}
@@ -719,11 +749,12 @@ export function App() {
       </main>
 
       {/* Mobile Bottom Navigation Bar */}
-      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-slate-50/90 dark:bg-slate-900/90 backdrop-blur-md border-t border-slate-200/80 dark:border-slate-800 sm:hidden px-4 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
-        <div className="max-w-md mx-auto flex items-center justify-around">
+      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-slate-50/90 dark:bg-slate-900/90 backdrop-blur-md border-t border-slate-200/80 dark:border-slate-800 sm:hidden px-2 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+        <div className="max-w-md mx-auto flex items-center justify-around gap-1">
           {([
             ['camera', Camera, 'Skener'],
             ['manual', Keyboard, 'Ručně'],
+            ['shelves', LibraryBig, 'Regály'],
             ['list', Library, `Knihovna (${books.length})`],
           ] as const).map(([tab, Icon, label]) => {
             const active = activeTab === tab;
@@ -732,7 +763,7 @@ export function App() {
                 key={tab}
                 onClick={() => setActiveTab(tab)}
                 aria-current={active ? 'page' : undefined}
-                className={`flex flex-col items-center gap-0.5 px-3 transition-colors ${
+                className={`flex-1 min-w-0 flex flex-col items-center gap-0.5 px-1 transition-colors ${
                   active ? 'text-indigo-700 dark:text-indigo-300' : 'text-slate-500 dark:text-slate-400'
                 }`}
               >
@@ -743,7 +774,7 @@ export function App() {
                 >
                   <Icon className="w-5 h-5" />
                 </span>
-                <span className={`text-[11px] ${active ? 'font-semibold' : 'font-medium'}`}>{label}</span>
+                <span className={`text-[11px] whitespace-nowrap ${active ? 'font-semibold' : 'font-medium'}`}>{label}</span>
               </button>
             );
           })}
