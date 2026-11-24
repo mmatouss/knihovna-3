@@ -1,5 +1,5 @@
 import React from 'react';
-import { Check } from 'lucide-react';
+import { Check, Plus } from 'lucide-react';
 import type { Book } from '../types/book';
 import type { BookCandidate } from '../services/coverSearch';
 import { BookCover } from './BookCover';
@@ -10,6 +10,8 @@ interface CandidateListProps {
   books: Book[];
   onPick: (candidate: BookCandidate) => void;
   onSelectBook: (book: Book) => void;
+  /** Kniha už v knihovně je → přidat další výtisk místo nového záznamu. */
+  onAddCopy?: (book: Book) => void;
 }
 
 const CONFIDENCE_LABEL = {
@@ -19,7 +21,7 @@ const CONFIDENCE_LABEL = {
 } as const;
 
 /** Seznam knih nalezených podle obálky nebo názvu – knihovník vybere tu svou. */
-export const CandidateList: React.FC<CandidateListProps> = ({ candidates, books, onPick, onSelectBook }) => (
+export const CandidateList: React.FC<CandidateListProps> = ({ candidates, books, onPick, onSelectBook, onAddCopy }) => (
   <ul className="space-y-2">
     {candidates.map((c) => {
       const inLibrary = books.find((b) => normalizeText(b.title) === normalizeText(c.title));
@@ -55,14 +57,34 @@ export const CandidateList: React.FC<CandidateListProps> = ({ candidates, books,
               )}
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => onPick(c)}
-            className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center gap-1 flex-shrink-0"
-          >
-            <Check className="w-3.5 h-3.5" />
-            Vybrat
-          </button>
+          {inLibrary && onAddCopy ? (
+            <div className="flex flex-col items-end gap-1 flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => onAddCopy(inLibrary)}
+                className="px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-semibold flex items-center gap-1"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Výtisk
+              </button>
+              <button
+                type="button"
+                onClick={() => onPick(c)}
+                className="text-[11px] text-slate-500 dark:text-slate-400 underline"
+              >
+                Je to jiná kniha
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => onPick(c)}
+              className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center gap-1 flex-shrink-0"
+            >
+              <Check className="w-3.5 h-3.5" />
+              Vybrat
+            </button>
+          )}
         </li>
       );
     })}

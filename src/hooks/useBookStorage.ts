@@ -1,42 +1,54 @@
 import { useState, useEffect } from 'react';
 import type { Book, ScanRecord } from '../types/book';
-import { normalizeIsbn } from '../utils/isbn';
+import { isbnKey, normalizeIsbn } from '../utils/isbn';
 
 const BOOKS_STORAGE_KEY = 'librarian_app_books_v1';
 const HISTORY_STORAGE_KEY = 'librarian_app_scan_history_v1';
 
-export function useBookStorage() {
-  const [books, setBooks] = useState<Book[]>(() => {
-    try {
-      const saved = localStorage.getItem(BOOKS_STORAGE_KEY);
-      if (saved) {
-        return JSON.parse(saved);
-      }
-    } catch (e) {
-      console.error('Failed to parse books from localStorage:', e);
-    }
+/** Načte seznam z úložiště; poškozená nebo chybějící data = prázdný seznam. */
+function loadList<T>(key: string): T[] {
+  try {
+    const saved = localStorage.getItem(key);
+    const parsed: unknown = saved ? JSON.parse(saved) : [];
+    return Array.isArray(parsed) ? (parsed as T[]) : [];
+  } catch (e) {
+    console.error(`Nepodařilo se načíst ${key}:`, e);
     return [];
-  });
+  }
+}
 
-  const [scanHistory, setScanHistory] = useState<ScanRecord[]>(() => {
-    try {
-      const savedHistory = localStorage.getItem(HISTORY_STORAGE_KEY);
-      if (savedHistory) {
-        return JSON.parse(savedHistory);
-      }
-    } catch (e) {
-      console.error('Failed to parse scan history from localStorage:', e);
-    }
-    return [];
-  });
+export function useBookStorage() {
+  const [books, setBooks] = useState<Book[]>(() => loadList<Book>(BOOKS_STORAGE_KEY));
+  const [scanHistory, setScanHistory] = useState<ScanRecord[]>(() => loadList<ScanRecord>(HISTORY_STORAGE_KEY));
+  /**
+   * Knihovnu se nepodařilo uložit (typicky je plná paměť prohlížeče – asi 5 MB,
+   * hlavně kvůli fotkám obálek). Bez upozornění by se změny po zavření ztratily.
+   */
+  const [saveFailed, setSaveFailed] = useState(false);
 
   useEffect(() => {
+    let ok = true;
     try {
       localStorage.setItem(BOOKS_STORAGE_KEY, JSON.stringify(books));
     } catch (e) {
-      console.error('Failed to save books to localStorage:', e);
+      console.error('Knihovnu se nepodařilo uložit:', e);
+      ok = false;
     }
+    // Výsledek zápisu do prohlížeče (vnější systém) musíme ukázat v aplikaci.
+    // oxlint-disable-next-line react/set-state-in-effect
+    setSaveFailed(!ok);
   }, [books]);
+
+  // Aplikace otevřená ve dvou záložkách: změny z jiné záložky převezmeme,
+  // jinak by jedna záložka při dalším uložení přepsala knihy přidané v druhé.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === BOOKS_STORAGE_KEY) setBooks(loadList<Book>(BOOKS_STORAGE_KEY));
+      if (e.key === HISTORY_STORAGE_KEY) setScanHistory(loadList<ScanRecord>(HISTORY_STORAGE_KEY));
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
 
   useEffect(() => {
     try {
@@ -52,7 +64,7 @@ export function useBookStorage() {
     book?: Book
   ) => {
     const newRecord: ScanRecord = {
-      id: `${isbn}-${Date.now()}`,
+      id: `${isbn || 'bez-isbn'}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       isbn,
       scannedAt: new Date().toISOString(),
       status,
@@ -67,8 +79,9 @@ export function useBookStorage() {
   const addBook = (newBook: Book): { success: boolean; isDuplicate: boolean; book: Book } => {
     const cleanNewIsbn = normalizeIsbn(newBook.isbn);
     // Kniha bez ISBN: duplikát podle ISBN poznat nejde (může jít i o další výtisk).
+    // ISBN-10 a ISBN-13 téže knihy se berou jako stejné číslo.
     const existingIndex = cleanNewIsbn
-      ? books.findIndex(b => normalizeIsbn(b.isbn) === cleanNewIsbn)
+      ? books.findIndex((b) => b.isbn !== '' && isbnKey(b.isbn) === isbnKey(cleanNewIsbn))
       : -1;
 
     if (existingIndex >= 0) {
@@ -123,12 +136,13 @@ export function useBookStorage() {
   };
 
   const hasBookWithIsbn = (isbn: string): boolean => {
-    const clean = normalizeIsbn(isbn);
-    return clean !== '' && books.some((b) => normalizeIsbn(b.isbn) === clean);
+    const key = isbnKey(isbn);
+    return key !== '' && books.some((b) => b.isbn !== '' && isbnKey(b.isbn) === key);
   };
 
   return {
     books,
+    saveFailed,
     scanHistory,
     addBook,
     updateBook,

@@ -13,6 +13,8 @@ interface CoverPhotoSearchProps {
   onManual: (title: string, photoUrl?: string) => void;
   /** Otevře knihu, která už v knihovně je. */
   onSelectBook: (book: Book) => void;
+  /** Nalezená kniha už v knihovně je → přidat výtisk. */
+  onAddCopy: (book: Book) => void;
 }
 
 type Phase = 'idle' | 'working' | 'results';
@@ -25,7 +27,7 @@ const inputClass =
  * Kniha bez ISBN: vyfoťte obálku a AI (Google Gemini) podle vzhledu
  * pozná, o jakou knihu jde. Jde i jen napsat název.
  */
-export const CoverPhotoSearch: React.FC<CoverPhotoSearchProps> = ({ books, onPick, onManual, onSelectBook }) => {
+export const CoverPhotoSearch: React.FC<CoverPhotoSearchProps> = ({ books, onPick, onManual, onSelectBook, onAddCopy }) => {
   const fileRef = useRef<HTMLInputElement>(null);
   const [apiKey, setApiKey] = useState(getGeminiKey);
   const [keyDraft, setKeyDraft] = useState('');
@@ -290,6 +292,10 @@ export const CoverPhotoSearch: React.FC<CoverPhotoSearchProps> = ({ books, onPic
             candidates={results}
             books={books}
             onSelectBook={onSelectBook}
+            onAddCopy={(book) => {
+              onAddCopy(book);
+              reset();
+            }}
             onPick={(c) => {
               onPick(c, photoUrl);
               reset();

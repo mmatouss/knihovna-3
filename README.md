@@ -15,32 +15,30 @@ Nasazení: GitHub Pages (`.github/workflows/deploy.yml`), po každém sloučení
 ### Jak bezpečně nastavit `GEMINI_API_KEY`
 
 Klíč se při nasazení vloží do aplikace, takže **je veřejně vidět** (kdo umí otevřít
-vývojářské nástroje prohlížeče, najde ho). Proto ho omezte tak, aby fungoval jen
-z této aplikace a nemohl nic stát:
+vývojářské nástroje prohlížeče, najde ho). Klíče pro Gemini API teď Google vytváří
+„vázané na servisní účet“ a ty **omezit na adresu webu nejdou** (volba *Websites*
+je zašedlá). Ochranou je proto hlavně to, že projekt nic neplatí:
 
 1. **Bez placení:** klíč vytvořte na <https://aistudio.google.com/apikey> v projektu,
-   který **nemá zapnuté placení (billing)**. Pak se nikdy nic neplatí – v nejhorším
-   případě někdo vyčerpá denní limit zdarma a AI do druhého dne nepůjde.
-2. **Omezení na web aplikace:** otevřete <https://console.cloud.google.com/apis/credentials>
-   (vlevo nahoře vyberte stejný projekt) → klepněte na název klíče:
-   - **Application restrictions** → zvolte **Websites** → **Add** → zadejte
-     `https://mmatouss.github.io/*`
-   - **API restrictions** → **Restrict key** → zaškrtněte jen
-     **Generative Language API**
-   - **Save**. Změna se projeví do několika minut.
+   který **nemá zapnuté placení (billing)**. Zkontrolujete to v
+   <https://console.cloud.google.com/billing> u projektu klíče (obvykle
+   „Default Gemini Project“). Pak se nikdy nic neplatí – v nejhorším případě někdo
+   vyčerpá denní limit zdarma a AI do druhého dne nepůjde.
+2. **Jen Gemini API:** v <https://console.cloud.google.com/apis/credentials>
+   (nahoře vyberte projekt klíče) → klepněte na klíč → *API restrictions* má být
+   jen **Gemini API**. *Application restrictions* nechte **None**.
 3. **Uložení na GitHub:** Settings → Secrets and variables → Actions →
    **New repository secret** → název `GEMINI_API_KEY`, hodnota = klíč.
 4. Nasazení se spustí po dalším sloučení do `main` (nebo ručně: Actions →
    „Deploy to GitHub Pages“ → **Run workflow**).
 
-Když AI napíše „AI odmítla klíč aplikace“, zkontrolujte bod 2 (adresa webu musí
-přesně odpovídat) a jestli je secret na GitHubu uložený.
+**Když by klíč někdo zneužil** (AI pořád hlásí vyčerpaný limit): u klíče v Google
+Cloud klepněte na **Rotate key**, nový klíč uložte do secretu `GEMINI_API_KEY`
+a spusťte nasazení znovu.
 
 **Při vývoji na vlastním počítači** (`npm run dev`) společný klíč není – aplikace
 nabídne políčko pro vlastní klíč. Můžete také vytvořit soubor `.env.local`
-s řádkem `VITE_GEMINI_API_KEY=...` (soubor se do gitu nenahrává). Na `localhost`
-bude ale klíč omezený na web fungovat, jen když do bodu 2 přidáte i
-`http://localhost:3000/*`.
+s řádkem `VITE_GEMINI_API_KEY=...` (soubor se do gitu nenahrává).
 
 ---
 

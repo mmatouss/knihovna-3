@@ -103,3 +103,13 @@ export function looksLikeBookCode(isbn: string): boolean {
   if (clean.length === 10) return true;
   return clean.length === 13 && (clean.startsWith('978') || clean.startsWith('979'));
 }
+
+/**
+ * Klíč pro porovnání ISBN: ISBN-10 i ISBN-13 téže knihy dají stejný klíč
+ * (13místnou podobu). Jinak (neplatná délka) vrátí očištěné číslo.
+ */
+export function isbnKey(isbn: string): string {
+  const clean = normalizeIsbn(isbn);
+  if (clean.length === 10) return isbn10To13(clean) ?? clean;
+  return clean;
+}

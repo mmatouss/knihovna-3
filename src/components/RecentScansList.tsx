@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type { Book, ScanRecord } from '../types/book';
 import { History, CheckCircle2, AlertCircle, Clock, ChevronRight, Trash2 } from 'lucide-react';
 import { BookCover } from './BookCover';
@@ -19,6 +19,8 @@ export const RecentScansList: React.FC<RecentScansListProps> = ({
   onClearHistory,
   onViewAll,
 }) => {
+  // Dnešní datum stačí zjistit jednou (kvůli zobrazení „jen čas“ u dnešních skenů).
+  const [today] = useState(() => new Date().toDateString());
   if (scanHistory.length === 0 && books.length === 0) {
     return null;
   }
@@ -62,10 +64,12 @@ export const RecentScansList: React.FC<RecentScansListProps> = ({
           scanHistory.slice(0, 5).map((record) => {
             const matchedBook = books.find((b) => b.id === record.bookId) ||
               (record.isbn ? books.find((b) => b.isbn === record.isbn) : undefined);
-            const timeStr = new Date(record.scannedAt).toLocaleTimeString('cs-CZ', {
-              hour: '2-digit',
-              minute: '2-digit',
-            });
+            // Dnes jen čas, starší skeny i s datem.
+            const scanned = new Date(record.scannedAt);
+            const isToday = scanned.toDateString() === today;
+            const timeStr = isToday
+              ? scanned.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' })
+              : scanned.toLocaleString('cs-CZ', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
 
             return (
               <div

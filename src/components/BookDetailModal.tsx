@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { BookCover } from './BookCover';
 import { formatIsbn, isValidIsbn, normalizeIsbn } from '../utils/isbn';
-import { copiesLabel, findBookByIsbn, findOtherEditions, getCopies, languageName } from '../utils/bookMatching';
+import { copiesLabel, findBookByIsbn, findOtherEditions, getCopies, languageCode, languageName } from '../utils/bookMatching';
 
 interface BookDetailModalProps {
   book: Book | null;
@@ -154,7 +154,8 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
       edition: form.edition.trim(),
       pageCount: form.pageCount.trim() ? Number(form.pageCount) : undefined,
       copies: Number(form.copies),
-      language: form.language.trim() || undefined,
+      // Ve formuláři je „angličtina“, ukládáme kód „en“ (stejně jako z databází).
+      language: languageCode(form.language),
       categories: form.categories.split(',').map((c) => c.trim()).filter(Boolean),
       notes: form.notes.trim(),
       description: form.description.trim(),
