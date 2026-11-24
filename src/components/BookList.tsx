@@ -75,6 +75,9 @@ interface BookListProps {
   shelves?: Shelf[];
   /** Otevře správu regálů. */
   onManageShelves?: () => void;
+  /** Vybraný regál, když ho řídí rodič (např. klepnutí na regál v záložce Regály). */
+  shelfFilter?: string;
+  onShelfFilterChange?: (key: string) => void;
 }
 
 export const BookList: React.FC<BookListProps> = ({
@@ -84,10 +87,17 @@ export const BookList: React.FC<BookListProps> = ({
   onNavigateToScan,
   shelves = [],
   onManageShelves,
+  shelfFilter: shelfFilterProp,
+  onShelfFilterChange,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   // Vybraný regál: 'all' = všechny knihy, 'none' = bez regálu, jinak id regálu.
-  const [shelfFilter, setShelfFilter] = useState<string>('all');
+  const [shelfFilterState, setShelfFilterState] = useState<string>('all');
+  const shelfFilter = shelfFilterProp ?? shelfFilterState;
+  const setShelfFilter = (key: string) => {
+    setShelfFilterState(key);
+    onShelfFilterChange?.(key);
+  };
   const shelfById = useMemo(() => new Map(shelves.map((s) => [s.id, s])), [shelves]);
   // Smazaný regál → zpět na všechny knihy.
   const activeShelf = shelfFilter === 'all' || shelfFilter === 'none' || shelfById.has(shelfFilter) ? shelfFilter : 'all';

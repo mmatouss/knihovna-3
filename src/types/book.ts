@@ -45,7 +45,7 @@ export interface ScanRecord {
   bookCoverUrl?: string;
 }
 
-export type ScanMode = 'camera' | 'manual' | 'list';
+export type ScanMode = 'camera' | 'manual' | 'shelves' | 'list';
 
 /** Jedna naskenovaná kniha v režimu rychlého skenování. */
 export interface BatchItem {
