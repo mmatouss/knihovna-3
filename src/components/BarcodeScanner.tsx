@@ -40,9 +40,29 @@ const FRONT_CAMERA = /front|přední|user|selfie|facetime|facing front/i;
 // hlavní „Back Camera“ ho nemá.
 
 /** Kamery, mezi kterými dává smysl přepínat (bez zvláštních objektivů). */
-function usableCameras(cameras: Array<{ id: string; label: string }>) {
-  const normal = cameras.filter((c) => !ODD_LENS.test(c.label));
-  return normal.length > 0 ? normal : cameras;
+type CameraInfo = { id: string; label: string; front: boolean };
+
+/**
+ * Kamery, mezi kterými dává smysl přepínat: jen zadní, bez zvláštních
+ * objektivů. Přední (selfie) kamera se ke skenování knih nehodí – čárový kód
+ * by se musel držet proti obrazovce. Na běžném telefonu tak zbude jediná
+ * kamera a tlačítko pro přepínání se vůbec neukáže.
+ */
+function usableCameras(cameras: CameraInfo[]) {
+  const back = cameras.filter((c) => !c.front);
+  const normal = back.filter((c) => !ODD_LENS.test(c.label));
+  return normal.length > 0 ? normal : back;
+}
+
+/** Je kamera přední (selfie)? Podle údajů prohlížeče, jinak podle názvu. */
+function isFrontCamera(device: MediaDeviceInfo): boolean {
+  try {
+    const facing = (device as InputDeviceInfo).getCapabilities?.().facingMode;
+    if (facing && facing.length > 0) return facing.includes('user') && !facing.includes('environment');
+  } catch {
+    /* prohlížeč údaje nedává */
+  }
+  return FRONT_CAMERA.test(device.label);
 }
 
 // Kolikrát za sekundu zkoušíme přečíst čárový kód.
@@ -147,7 +167,7 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
     };
   }, [coverMode]);
 
-  const [cameras, setCameras] = useState<Array<{ id: string; label: string }>>([]);
+  const [cameras, setCameras] = useState<CameraInfo[]>([]);
   // Prázdný řetězec = výchozí zadní kamera (facingMode: environment).
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -318,13 +338,13 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
           if (!cancelled) {
             const list = devices
               .filter((d) => d.kind === 'videoinput')
-              .map((d, i) => ({ id: d.deviceId, label: d.label || `Kamera ${i + 1}` }));
+              .map((d, i) => ({ id: d.deviceId, label: d.label || `Kamera ${i + 1}`, front: isFrontCamera(d) }));
             setCameras(list);
             // Prohlížeč vybral ultraširokoúhlý / „trojitý“ objektiv (obraz na 0,5×,
             // neostří zblízka) → přepneme na hlavní zadní fotoaparát.
             const activeLabel = track?.label ?? '';
             if (!selectedCameraId && ODD_LENS.test(activeLabel)) {
-              const main = list.find((c) => !ODD_LENS.test(c.label) && !FRONT_CAMERA.test(c.label));
+              const main = list.find((c) => !ODD_LENS.test(c.label) && !c.front);
               if (main) {
                 setSelectedCameraId(main.id);
                 return; // kamera se spustí znovu s hlavním objektivem
