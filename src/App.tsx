@@ -1,6 +1,9 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import type { BatchItem, Book, ScanMode } from './types/book';
 import { useBookStorage } from './hooks/useBookStorage';
+import { useShelves } from './hooks/useShelves';
+import { ShelfManager } from './components/ShelfManager';
+import { ShelfSelect } from './components/ShelfSelect';
 import { enrichBook, fetchBookByIsbn, lookupBookByIsbn } from './services/bookApi';
 import { BarcodeScanner } from './components/BarcodeScanner';
 import { ManualIsbnInput } from './components/ManualIsbnInput';
@@ -15,7 +18,7 @@ import { BatchLiveBar, BatchSessionPanel } from './components/BatchSessionPanel'
 import { playFeedback, unlockAudio } from './utils/feedback';
 import { looksLikeBookCode, normalizeIsbn } from './utils/isbn';
 import { copiesLabel, findBookByIsbn, findOtherEditions, getCopies } from './utils/bookMatching';
-import { Camera, Keyboard, Library, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Camera, Keyboard, Library, CheckCircle2, AlertCircle, LibraryBig } from 'lucide-react';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<ScanMode>('camera');
@@ -32,7 +35,61 @@ export function App() {
     clearScanHistory,
     insertBook,
     adjustCopies,
+    setBookShelf,
+    removeShelfFromBooks,
   } = useBookStorage();
+
+  // ---------------------------------------------------------------------
+  // Regály: kam se řadí knihy (kategorie / police).
+  // ---------------------------------------------------------------------
+  const { shelves, addShelf, updateShelf, deleteShelf } = useShelves();
+  const [showShelfManager, setShowShelfManager] = useState(false);
+  // Regál, do kterého se ukládají nově naskenované/zapsané knihy ('' = nezařazovat).
+  // Hodí se při katalogizaci police po polici. Pamatuje se v tomto zařízení.
+  const [scanShelfIdRaw, setScanShelfId] = useState(() => {
+    try {
+      return localStorage.getItem('knihovnik_scan_shelf') ?? '';
+    } catch {
+      return '';
+    }
+  });
+  // Smazaný regál se už nepoužije.
+  const scanShelfId = shelves.some((s) => s.id === scanShelfIdRaw) ? scanShelfIdRaw : '';
+  useEffect(() => {
+    try {
+      localStorage.setItem('knihovnik_scan_shelf', scanShelfId);
+    } catch {
+      /* nevadí */
+    }
+  }, [scanShelfId]);
+  /** Nová kniha dostane regál vybraný ve skeneru (pokud nějaký je). */
+  const withScanShelf = (book: Book): Book => (scanShelfId ? { ...book, shelfId: scanShelfId } : book);
+  const scanShelf = shelves.find((s) => s.id === scanShelfId);
+
+  const handleDeleteShelf = (shelfId: string) => {
+    deleteShelf(shelfId);
+    removeShelfFromBooks(shelfId);
+  };
+
+  /** Výběr „Ukládat do regálu“ – stejný ve skeneru i v ručním zadání. */
+  const scanShelfRow = (
+    <label className="w-full max-w-md mx-auto flex items-center gap-2 px-3 py-0.5 rounded-2xl bg-white/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300">
+      <LibraryBig className="w-4 h-4 flex-shrink-0 text-indigo-600 dark:text-indigo-400" />
+      <span className="whitespace-nowrap">Ukládat do regálu:</span>
+      {scanShelf && (
+        <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: scanShelf.color }} aria-hidden="true" />
+      )}
+      <ShelfSelect
+        shelves={shelves}
+        value={scanShelfId}
+        onChange={setScanShelfId}
+        onCreate={addShelf}
+        emptyLabel="Nezařazovat"
+        aria-label="Regál pro nově přidané knihy"
+        className="flex-1 min-w-0 bg-transparent py-2 font-semibold text-slate-900 dark:text-white focus:outline-none cursor-pointer"
+      />
+    </label>
+  );
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
   // Jak otevřít detail: rovnou v úpravách (údaje se nenašly) / s nabídkou dalšího výtisku.
   const [modalMode, setModalMode] = useState<{ edit: boolean; duplicate: boolean }>({ edit: false, duplicate: false });
@@ -46,7 +103,7 @@ export function App() {
 
   // Ruční zápis knihy bez ISBN.
   const handleManualBookAdd = (book: Book) => {
-    addBook(book);
+    addBook(withScanShelf(book));
     showToast('success', `Kniha bez ISBN uložena: "${book.title}"`);
   };
 
@@ -79,7 +136,7 @@ export function App() {
           : `AI Gemini (podle obálky), ${candidate.source}`
         : `${candidate.source} (podle názvu)`,
     });
-    addBook(book);
+    addBook(withScanShelf(book));
     showToast('success', `Kniha bez ISBN uložena: "${book.title}"`, {
       label: 'Zkontrolovat',
       onClick: () => {
@@ -108,6 +165,7 @@ export function App() {
       title: title.trim() || 'Kniha bez názvu',
       authors: ['Neznámý autor'],
       coverUrl: photoUrl,
+      shelfId: scanShelfId || undefined,
     });
     addBook(book);
     showToast('warning', 'Doplňte prosím název, autora a další údaje.');
@@ -214,7 +272,7 @@ export function App() {
 
     const lookup = (async (): Promise<Book | null> => {
       try {
-        const fetched = await fetchBookByIsbn(clean);
+        const fetched = withScanShelf(await fetchBookByIsbn(clean));
         insertBook(fetched);
         booksRef.current = [fetched, ...booksRef.current];
         recordScan(clean, 'added', fetched);
@@ -336,7 +394,9 @@ export function App() {
           return;
         }
 
-        const { book: fetchedBook, offline } = await lookupBookByIsbn(isbn);
+        const { book: lookedUp, offline } = await lookupBookByIsbn(isbn);
+        // Nová kniha dostane regál vybraný ve skeneru.
+        const fetchedBook = scanShelfId ? { ...lookedUp, shelfId: scanShelfId } : lookedUp;
         const result = addBook(fetchedBook);
         const otherEditions = result.isDuplicate ? [] : findOtherEditions(fetchedBook, books);
 
@@ -383,7 +443,7 @@ export function App() {
         setIsLoading(false);
       }
     },
-    [addBook, books, recordScan, isLoading]
+    [addBook, books, recordScan, isLoading, scanShelfId]
   );
 
   return (
@@ -548,6 +608,26 @@ export function App() {
                 repeatDelayMs={batchMode ? 2000 : 5000}
                 onManualEntry={goToManualEntry}
                 onCoverPhoto={setAiPhoto}
+                // Regál pro nové knihy – malá „pilulka“ přímo v obraze kamery (nezabírá místo).
+                topLeft={
+                  shelves.length > 0 ? (
+                    <label className="max-w-full flex items-center gap-1.5 pl-3 pr-1 rounded-full bg-black/55 backdrop-blur-md text-white text-xs">
+                      <LibraryBig className="w-3.5 h-3.5 flex-shrink-0 opacity-80" aria-hidden="true" />
+                      {scanShelf && (
+                        <span className="w-2.5 h-2.5 rounded-full flex-shrink-0 ring-1 ring-white/60" style={{ backgroundColor: scanShelf.color }} aria-hidden="true" />
+                      )}
+                      <ShelfSelect
+                        shelves={shelves}
+                        value={scanShelfId}
+                        onChange={setScanShelfId}
+                        onCreate={addShelf}
+                        emptyLabel="Nezařazovat do regálu"
+                        aria-label="Regál pro nově přidané knihy"
+                        className="min-w-0 max-w-[11rem] truncate bg-transparent py-2.5 pr-1 font-semibold focus:outline-none cursor-pointer [&>option]:text-slate-900"
+                      />
+                    </label>
+                  ) : undefined
+                }
               />
 
               {batchMode && (
@@ -591,6 +671,8 @@ export function App() {
 
           {activeTab === 'manual' && (
             <div className="py-2 space-y-4">
+              {shelves.length > 0 && scanShelfRow}
+
               <ManualIsbnInput
                 key={manualPrefill.n}
                 onSearch={handleIsbnDetected}
@@ -626,6 +708,8 @@ export function App() {
           {activeTab === 'list' && (
             <BookList
               books={books}
+              shelves={shelves}
+              onManageShelves={() => setShowShelfManager(true)}
               onSelectBook={(book) => openBook(book)}
               onClearAll={clearAllBooks}
               onNavigateToScan={() => setActiveTab('camera')}
@@ -707,7 +791,30 @@ export function App() {
           showToast('success', 'Změny byly uloženy.');
         }}
         onDelete={handleDeleteBook}
+        shelves={shelves}
+        onCreateShelf={addShelf}
+        onChangeShelf={(book, shelfId, created) => {
+          setBookShelf(book.id, shelfId);
+          setSelectedBook({ ...book, shelfId });
+          // Právě vytvořený regál ještě není v `shelves` (stav se obnoví až po vykreslení).
+          const shelf = created ?? shelves.find((x) => x.id === shelfId);
+          showToast('success', shelf ? `Přesunuto do regálu „${shelf.name}“.` : 'Kniha je teď bez regálu.');
+        }}
       />
+
+      {showShelfManager && (
+        <ShelfManager
+          shelves={shelves}
+          books={books}
+          onAdd={addShelf}
+          onUpdate={updateShelf}
+          onDelete={(shelf) => {
+            handleDeleteShelf(shelf.id);
+            showToast('success', `Regál „${shelf.name}“ byl smazán.`);
+          }}
+          onClose={() => setShowShelfManager(false)}
+        />
+      )}
     </div>
   );
 }

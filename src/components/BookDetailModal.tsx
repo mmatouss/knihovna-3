@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import type { Book } from '../types/book';
+import type { Book, Shelf } from '../types/book';
 import {
   X,
   Edit2,
@@ -21,6 +21,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { BookCover } from './BookCover';
+import { ShelfSelect } from './ShelfSelect';
 import { formatIsbn, isValidIsbn, normalizeIsbn } from '../utils/isbn';
 import { copiesLabel, findBookByIsbn, findOtherEditions, getCopies, languageCode, languageName } from '../utils/bookMatching';
 
@@ -39,6 +40,12 @@ interface BookDetailModalProps {
   isDuplicateScan?: boolean;
   /** Doplní chybějící údaje z online databází (podle ISBN). */
   onEnrich?: (book: Book) => Promise<void>;
+  /** Regály, do kterých jde knihu zařadit. */
+  shelves?: Shelf[];
+  /** Přesune knihu do regálu ('' = bez regálu). */
+  onChangeShelf?: (book: Book, shelfId: string | undefined, newShelf?: Shelf) => void;
+  /** Vytvoří nový regál (volba „+ Nový regál…“). */
+  onCreateShelf?: (name: string) => Shelf | null;
 }
 
 const inputClass =
@@ -54,6 +61,9 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
   startEditing = false,
   isDuplicateScan = false,
   onEnrich,
+  shelves = [],
+  onChangeShelf,
+  onCreateShelf,
 }) => {
   // Pozn.: komponenta se pro každou knihu vytváří znovu (viz `key` v App.tsx),
   // takže se pole vždy předvyplní údaji právě otevřené knihy.
@@ -281,6 +291,28 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
                       <Plus className="w-3.5 h-3.5" />
                     </button>
                   </div>
+
+                  {/* Regál – změna jedním klepnutím, bez otevírání úprav */}
+                  {onChangeShelf && onCreateShelf && (
+                    <label className="mt-2 flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+                      <span>Regál:</span>
+                      <span className="relative flex-1 min-w-0 flex items-center rounded-lg bg-slate-100 dark:bg-slate-700 pl-2.5">
+                        <span
+                          className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: shelves.find((x) => x.id === book.shelfId)?.color ?? 'transparent' }}
+                          aria-hidden="true"
+                        />
+                        <ShelfSelect
+                          shelves={shelves}
+                          value={book.shelfId ?? ''}
+                          onChange={(id, created) => onChangeShelf(book, id || undefined, created)}
+                          onCreate={onCreateShelf}
+                          aria-label="Regál"
+                          className="flex-1 min-w-0 bg-transparent pl-1.5 pr-2 py-2.5 font-semibold text-slate-900 dark:text-white focus:outline-none cursor-pointer"
+                        />
+                      </span>
+                    </label>
+                  )}
                 </>
               ) : (
                 <div className="space-y-3">

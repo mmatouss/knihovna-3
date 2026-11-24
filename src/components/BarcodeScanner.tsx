@@ -25,6 +25,8 @@ interface BarcodeScannerProps {
   onManualEntry?: (prefill?: string, note?: string) => void;
   /** Vyfotí obálku z kamery a pošle ji k rozpoznání AI (kniha bez ISBN). */
   onCoverPhoto?: (photo: Blob) => void;
+  /** Ovládací prvek v levém horním rohu obrazu (např. výběr regálu). */
+  topLeft?: React.ReactNode;
 }
 
 /**
@@ -107,7 +109,7 @@ function captureScanRegion(
   return true;
 }
 
-export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, isScanningActive, isPaused = false, repeatDelayMs = 5000, onManualEntry, onCoverPhoto }) => {
+export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, isScanningActive, isPaused = false, repeatDelayMs = 5000, onManualEntry, onCoverPhoto, topLeft }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const onScanSuccessRef = useRef(onScanSuccess);
@@ -510,6 +512,11 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
           muted
           playsInline
         />
+
+        {/* Levý horní roh obrazu – např. regál, do kterého se ukládá */}
+        {topLeft && isScanningActive && !errorMsg && !isInitializing && !coverMode && (
+          <div className="absolute top-3 left-3 right-16 z-10 flex">{topLeft}</div>
+        )}
 
         {/* Svítilna a přepnutí kamery – kulatá tlačítka v rohu obrazu */}
         {isScanningActive && !errorMsg && !isInitializing && (isTorchSupported || switchableCameras.length > 1) && (
