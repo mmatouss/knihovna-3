@@ -493,14 +493,14 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
     <div
       className={
         coverMode
-          ? 'fixed inset-0 z-[60] !m-0 bg-black text-white flex flex-col'
+          ? 'fixed inset-0 z-[60] !m-0 bg-black text-white flex flex-col phone-landscape:flex-row'
           : 'w-full max-w-md mx-auto bg-slate-900 rounded-3xl overflow-hidden shadow-lg border border-slate-800 text-white relative'
       }
     >
       {/* Viewport container */}
       <div
         className={`relative w-full bg-slate-950 flex items-center justify-center overflow-hidden ${
-          coverMode ? 'flex-1 min-h-0' : 'aspect-[3/4] max-h-[48dvh]'
+          coverMode ? 'flex-1 min-h-0' : 'aspect-[3/4] max-h-[48dvh] short:max-h-[40dvh]'
         }`}
       >
         <video
@@ -542,16 +542,16 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
 
         {/* Focení obálky: velký rámeček ve tvaru knihy */}
         {coverMode && !errorMsg && !isInitializing && (
-          <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center px-6 pt-[max(1rem,env(safe-area-inset-top))]">
-            <p className="mb-3 text-sm font-semibold text-white bg-black/60 px-4 py-1.5 rounded-full backdrop-blur-md flex items-center gap-1.5">
+          <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center px-6 pt-[max(1rem,env(safe-area-inset-top))] phone-landscape:pt-2">
+            <p className="mb-3 phone-landscape:mb-2 text-sm font-semibold text-white bg-black/60 px-4 py-1.5 rounded-full backdrop-blur-md flex items-center gap-1.5">
               <Sparkles className="w-4 h-4 text-indigo-300" />
               Celou obálku dejte do rámečku
             </p>
             <div
               ref={coverFrameRef}
-              className="relative rounded-xl border-2 border-white/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.6)]"
-              // Tvar obálky (2 : 3); šířka podle toho, co je menší – šířka nebo výška obrazovky.
-              style={{ width: 'min(84vw, 44dvh)', aspectRatio: '2 / 3' }}
+              className="relative rounded-xl border-2 border-white/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.6)] w-[min(84vw,44dvh)] phone-landscape:w-[min(40vw,48dvh)]"
+              // Tvar obálky (2 : 3); velikost podle menšího z rozměrů obrazovky.
+              style={{ aspectRatio: '2 / 3' }}
             >
               {(['top-0 left-0 border-t-4 border-l-4 rounded-tl-xl', 'top-0 right-0 border-t-4 border-r-4 rounded-tr-xl', 'bottom-0 left-0 border-b-4 border-l-4 rounded-bl-xl', 'bottom-0 right-0 border-b-4 border-r-4 rounded-br-xl'] as const).map((pos) => (
                 <div key={pos} className={`absolute -m-1 w-8 h-8 border-indigo-400 ${pos}`} />
@@ -620,7 +620,8 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
               </p>
             ) : (
               <p className="relative mt-4 text-xs font-medium text-slate-200 bg-black/70 px-4 py-1.5 rounded-full backdrop-blur-md text-center shadow-md">
-                Namiřte čárový kód nebo číslo ISBN do rámečku
+                <span className="narrow:hidden">Namiřte čárový kód nebo číslo ISBN do rámečku</span>
+                <span className="hidden narrow:inline">Čárový kód do rámečku</span>
               </p>
             )}
           </div>
@@ -656,7 +657,7 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
 
       {/* Focení obálky: Zrušit – spoušť – (svítilna je nahoře v obraze) */}
       {coverMode && (
-        <div className="flex items-center justify-between px-8 pt-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] bg-black">
+        <div className="flex items-center justify-between px-8 pt-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] bg-black phone-landscape:flex-col-reverse phone-landscape:justify-center phone-landscape:gap-6 phone-landscape:px-5 phone-landscape:py-4 phone-landscape:pr-[max(1.25rem,env(safe-area-inset-right))]">
           <button
             type="button"
             onClick={() => setCoverMode(false)}
@@ -691,30 +692,30 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScanSuccess, i
               onPointerEnter={preloadIsbnOcr}
               onTouchStart={preloadIsbnOcr}
               disabled={isReadingText}
-              className="min-h-[4.25rem] px-3 py-2.5 rounded-2xl bg-slate-800 hover:bg-slate-700 active:scale-[0.98] disabled:opacity-60 text-left flex items-center gap-2.5 transition-all"
+              className="min-h-[4.25rem] narrow:min-h-14 px-3 py-2.5 rounded-2xl bg-slate-800 hover:bg-slate-700 active:scale-[0.98] disabled:opacity-60 text-left flex items-center gap-2.5 transition-all"
             >
-              <span className="w-9 h-9 rounded-xl bg-slate-700 flex items-center justify-center flex-shrink-0">
+              <span className="w-9 h-9 narrow:hidden rounded-xl bg-slate-700 flex items-center justify-center flex-shrink-0">
                 {isReadingText ? <RefreshCw className="w-4.5 h-4.5 animate-spin" /> : <ScanText className="w-4.5 h-4.5" />}
               </span>
               <span className="min-w-0">
                 <span className="block text-[13px] font-semibold leading-tight">
                   {isReadingText ? 'Čtu číslo…' : 'Přečíst číslo'}
                 </span>
-                <span className="block text-[11px] text-slate-400 leading-tight mt-0.5">ISBN bez čárového kódu</span>
+                <span className="block text-[11px] text-slate-400 leading-tight mt-0.5 narrow:hidden">ISBN bez čárového kódu</span>
               </span>
             </button>
             {onCoverPhoto && (
               <button
                 type="button"
                 onClick={() => setCoverMode(true)}
-                className="min-h-[4.25rem] px-3 py-2.5 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 hover:from-indigo-400 hover:to-violet-500 active:scale-[0.98] text-left flex items-center gap-2.5 shadow-lg shadow-indigo-900/40 transition-all"
+                className="min-h-[4.25rem] narrow:min-h-14 px-3 py-2.5 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 hover:from-indigo-400 hover:to-violet-500 active:scale-[0.98] text-left flex items-center gap-2.5 shadow-lg shadow-indigo-900/40 transition-all"
               >
-                <span className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+                <span className="w-9 h-9 narrow:hidden rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
                   <Sparkles className="w-4.5 h-4.5" />
                 </span>
                 <span className="min-w-0">
                   <span className="block text-[13px] font-semibold leading-tight">Vyfotit obálku s AI</span>
-                  <span className="block text-[11px] text-indigo-100/90 leading-tight mt-0.5">Kniha nemá ISBN</span>
+                  <span className="block text-[11px] text-indigo-100/90 leading-tight mt-0.5 narrow:hidden">Kniha nemá ISBN</span>
                 </span>
               </button>
             )}

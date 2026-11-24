@@ -34,7 +34,7 @@ export const RecentScansList: React.FC<RecentScansListProps> = ({
         <div className="flex items-center space-x-2">
           <History className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
           <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">
-            Naposledy uloženo a naskenováno
+            Naposledy naskenováno
           </h3>
         </div>
 
@@ -42,8 +42,9 @@ export const RecentScansList: React.FC<RecentScansListProps> = ({
           {scanHistory.length > 0 && (
             <button
               onClick={onClearHistory}
-              className="text-[11px] text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors p-1"
+              className="text-[11px] text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors p-2.5 -m-1.5 rounded-lg"
               title="Vymazat historii skenování"
+              aria-label="Vymazat historii skenování"
             >
               <Trash2 className="w-3.5 h-3.5" />
             </button>
@@ -51,7 +52,7 @@ export const RecentScansList: React.FC<RecentScansListProps> = ({
 
           <button
             onClick={onViewAll}
-            className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center"
+            className="py-2 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center"
           >
             <span>Zobrazit vše ({books.length})</span>
             <ChevronRight className="w-3.5 h-3.5 ml-0.5" />
@@ -75,13 +76,22 @@ export const RecentScansList: React.FC<RecentScansListProps> = ({
               <div
                 key={record.id}
                 onClick={() => matchedBook && onSelectBook(matchedBook)}
+                // Řádek se dá otevřít i z klávesnice (Tab + Enter).
+                role={matchedBook ? 'button' : undefined}
+                tabIndex={matchedBook ? 0 : undefined}
+                onKeyDown={(e) => {
+                  if (matchedBook && (e.key === 'Enter' || e.key === ' ')) {
+                    e.preventDefault();
+                    onSelectBook(matchedBook);
+                  }
+                }}
                 className={`py-2.5 flex items-center justify-between text-xs transition-colors rounded-xl px-2 ${
                   matchedBook
                     ? 'hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer'
                     : 'opacity-80'
                 }`}
               >
-                <div className="flex items-center space-x-3 min-w-0 pr-2">
+                <div className="flex items-center space-x-3 min-w-0 flex-1 pr-2">
                   <BookCover
                     title={matchedBook?.title || record.bookTitle || record.isbn || '?'}
                     authors={matchedBook?.authors}
@@ -95,10 +105,11 @@ export const RecentScansList: React.FC<RecentScansListProps> = ({
                     <div className="font-semibold text-slate-900 dark:text-white truncate">
                       {matchedBook?.title || record.bookTitle || `ISBN ${formatIsbn(record.isbn)}`}
                     </div>
-                    <div className="flex items-center space-x-2 text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
-                      <span className="font-mono">{record.isbn ? formatIsbn(record.isbn) : 'Bez ISBN'}</span>
-                      <span>•</span>
-                      <span className="flex items-center">
+                    {/* Na úzkém displeji se čas zalomí pod ISBN – nesmí se překrýt se štítkem vpravo. */}
+                    <div className="flex flex-wrap items-center gap-x-2 text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                      <span className="font-mono whitespace-nowrap">{record.isbn ? formatIsbn(record.isbn) : 'Bez ISBN'}</span>
+                      <span aria-hidden="true">•</span>
+                      <span className="flex items-center whitespace-nowrap">
                         <Clock className="w-3 h-3 mr-0.5 inline" />
                         {timeStr}
                       </span>

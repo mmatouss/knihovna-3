@@ -221,18 +221,19 @@ export const BookList: React.FC<BookListProps> = ({
                   type="button"
                   onClick={() => exportBooksToCsv(filteredBooks)}
                   disabled={filteredBooks.length === 0}
-                  className="disabled:opacity-50 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white dark:bg-indigo-600 dark:hover:bg-indigo-500 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-colors shadow-xs"
+                  className="disabled:opacity-50 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white dark:bg-indigo-600 dark:hover:bg-indigo-500 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-colors shadow-xs"
                   title="Exportovat zobrazené knihy do CSV (Excel)"
                 >
                   <Download className="w-4 h-4" />
-                  <span>Export CSV</span>
+                  <span className="whitespace-nowrap">Export<span className="narrow:hidden"> CSV</span></span>
                 </button>
 
                 <button
                   type="button"
                   onClick={onClearAll}
-                  className="p-1.5 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition-colors"
+                  className="p-2.5 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition-colors"
                   title="Smazat všechny knihy"
+                  aria-label="Smazat všechny knihy"
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
@@ -241,7 +242,7 @@ export const BookList: React.FC<BookListProps> = ({
 
             <button
               onClick={onNavigateToScan}
-              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-medium flex items-center space-x-1 transition-all shadow-sm"
+              className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-medium flex items-center space-x-1 transition-all shadow-sm"
             >
               <Plus className="w-4 h-4" />
               <span>Skenovat</span>
@@ -259,20 +260,20 @@ export const BookList: React.FC<BookListProps> = ({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Hledat podle názvu, autora nebo ISBN..."
+                placeholder="Hledat název, autora, ISBN…"
                 className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
 
             {/* Sort & View Mode Toggles */}
             <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
-              <div className="relative flex flex-1 sm:flex-none items-center min-w-[9rem] max-w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1.5">
+              <div className="relative flex flex-1 sm:flex-none items-center min-w-[9rem] max-w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5">
                 <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 mr-1.5" />
                 <select
                   value={sortOrder}
                   onChange={(e) => setSortOrder(e.target.value as SortOrder)}
                   aria-label="Řazení"
-                  className="bg-transparent text-xs text-slate-700 dark:text-slate-200 focus:outline-none cursor-pointer min-w-0 w-full sm:w-auto"
+                  className="bg-transparent text-xs text-slate-700 dark:text-slate-200 focus:outline-none cursor-pointer min-w-0 w-full sm:w-auto py-2.5"
                 >
                   <option value="newest" className="dark:bg-slate-800">Nejnovější</option>
                   <option value="title" className="dark:bg-slate-800">Název (A-Z)</option>
@@ -286,7 +287,7 @@ export const BookList: React.FC<BookListProps> = ({
                 type="button"
                 onClick={() => setShowFilters(!showFilters)}
                 aria-expanded={showFilters}
-                className={`relative px-2.5 py-1.5 rounded-xl border text-xs font-medium flex items-center space-x-1 transition-colors ${
+                className={`relative px-3 py-2.5 rounded-xl border text-xs font-medium flex items-center space-x-1 transition-colors ${
                   showFilters || activeFilterCount > 0
                     ? 'bg-indigo-50 dark:bg-indigo-950/50 border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300'
                     : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
@@ -304,7 +305,7 @@ export const BookList: React.FC<BookListProps> = ({
               <div className="flex items-center bg-slate-100 dark:bg-slate-900 rounded-xl p-1 border border-slate-200 dark:border-slate-700">
                 <button
                   onClick={() => setViewMode('list')}
-                  className={`p-1 rounded-lg transition-colors ${
+                  className={`p-2 rounded-lg transition-colors ${
                     viewMode === 'list'
                       ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-xs'
                       : 'text-slate-400'
@@ -316,7 +317,7 @@ export const BookList: React.FC<BookListProps> = ({
                 </button>
                 <button
                   onClick={() => setViewMode('grid')}
-                  className={`p-1 rounded-lg transition-colors ${
+                  className={`p-2 rounded-lg transition-colors ${
                     viewMode === 'grid'
                       ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-xs'
                       : 'text-slate-400'
@@ -410,7 +411,7 @@ export const BookList: React.FC<BookListProps> = ({
               ] as const).map(([key, label]) => (
                 <label
                   key={key}
-                  className={`px-3 py-1.5 rounded-full border text-xs cursor-pointer select-none transition-colors ${
+                  className={`px-3 py-2 rounded-full border text-xs cursor-pointer select-none transition-colors ${
                     filters[key]
                       ? 'bg-indigo-600 border-indigo-600 text-white'
                       : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
@@ -564,7 +565,7 @@ export const BookList: React.FC<BookListProps> = ({
                   isbn={book.isbn}
                   className="w-full aspect-[2/3] transition-transform group-hover:-translate-y-1 group-hover:rotate-[-0.6deg]"
                 />
-                <h4 className="mt-2 text-xs sm:text-sm font-semibold text-slate-900 dark:text-white leading-snug line-clamp-2">
+                <h4 className="mt-2 text-xs sm:text-sm font-semibold text-slate-900 dark:text-white leading-snug line-clamp-2 [overflow-wrap:anywhere]">
                   {book.title}
                 </h4>
                 <p className="text-[11px] text-slate-600 dark:text-slate-400 truncate">{book.authors.join(', ')}</p>

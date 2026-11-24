@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+/* Telefon otočený na šířku (nízká výška) – např. focení obálky dá ovládání na stranu. */
+@custom-variant phone-landscape (@media (orientation: landscape) and (max-height: 500px));
+/* Velmi úzký telefon (iPhone SE 1. generace a podobné, 320 px). */
+@custom-variant narrow (@media (max-width: 359px));
+/* Nízký displej – kamera ve skeneru menší, aby se vešla tlačítka. */
+@custom-variant short (@media (max-height: 700px));
+
 /*
  * Vzhled aplikace „Knihovník“
  * ---------------------------

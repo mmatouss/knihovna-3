@@ -87,7 +87,7 @@ export const AiCoverSheet: React.FC<AiCoverSheetProps> = ({ photo, books, onPick
               <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">Která z nich je vaše kniha?</p>
             )}
           </div>
-          <button type="button" onClick={onClose} className="p-1 text-slate-400 hover:text-slate-600" aria-label="Zavřít">
+          <button type="button" onClick={onClose} className="p-2.5 -m-1.5 text-slate-400 hover:text-slate-600 rounded-lg" aria-label="Zavřít">
             <X className="w-5 h-5" />
           </button>
         </div>

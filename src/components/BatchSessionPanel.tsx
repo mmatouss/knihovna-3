@@ -75,7 +75,7 @@ export const BatchSessionPanel: React.FC<BatchSessionPanelProps> = ({
             type="button"
             onClick={() => lastUndoable && onUndo(lastUndoable.id)}
             disabled={!lastUndoable}
-            className="px-3 py-1.5 rounded-lg bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 text-xs font-semibold flex items-center whitespace-nowrap disabled:opacity-30"
+            className="px-3 py-2.5 rounded-lg bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 text-xs font-semibold flex items-center whitespace-nowrap disabled:opacity-30"
           >
             <Undo2 className="w-3.5 h-3.5 mr-1" />
             Vrátit poslední
@@ -84,7 +84,7 @@ export const BatchSessionPanel: React.FC<BatchSessionPanelProps> = ({
             type="button"
             onClick={onNewSession}
             disabled={items.length === 0}
-            className="px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-medium flex items-center whitespace-nowrap disabled:opacity-30"
+            className="px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-medium flex items-center whitespace-nowrap disabled:opacity-30"
           >
             <RotateCcw className="w-3.5 h-3.5 mr-1" />
             Nová relace
@@ -108,7 +108,7 @@ export const BatchSessionPanel: React.FC<BatchSessionPanelProps> = ({
               role="radio"
               aria-checked={duplicateMode === mode}
               onClick={() => onDuplicateModeChange(mode)}
-              className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
+              className={`px-3 py-2 rounded-md font-medium transition-colors ${
                 duplicateMode === mode
                   ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
                   : 'text-slate-500 dark:text-slate-400'
@@ -122,7 +122,7 @@ export const BatchSessionPanel: React.FC<BatchSessionPanelProps> = ({
           type="button"
           onClick={() => onSoundChange(!soundOn)}
           aria-pressed={soundOn}
-          className="ml-auto p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center"
+          className="ml-auto px-2.5 py-2.5 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center"
           title={soundOn ? 'Vypnout zvuk' : 'Zapnout zvuk'}
         >
           {soundOn ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
@@ -167,7 +167,7 @@ export const BatchSessionPanel: React.FC<BatchSessionPanelProps> = ({
                   <button
                     type="button"
                     onClick={() => onOpenBook(item.bookId!, true)}
-                    className="px-2 py-1 rounded-md text-[11px] font-semibold text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/40 flex items-center"
+                    className="px-2.5 py-2 rounded-md text-[11px] font-semibold text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/40 flex items-center"
                   >
                     <PencilLine className="w-3 h-3 mr-1" />
                     Doplnit
@@ -234,7 +234,7 @@ export const BatchLiveBar: React.FC<BatchLiveBarProps> = ({ items, onUndo }) => 
             <button
               type="button"
               onClick={() => onUndo(last.id)}
-              className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-semibold flex items-center whitespace-nowrap"
+              className="px-3 py-2.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-semibold flex items-center whitespace-nowrap"
             >
               <Undo2 className="w-3.5 h-3.5 mr-1" />
               Vrátit
