@@ -21,6 +21,7 @@ export function App() {
   const [activeTab, setActiveTab] = useState<ScanMode>('camera');
   const {
     books,
+    saveFailed,
     scanHistory,
     addBook,
     updateBook,
@@ -83,6 +84,20 @@ export function App() {
       label: 'Zkontrolovat',
       onClick: () => {
         openBook(book, { edit: true });
+        setNotification(null);
+      },
+    });
+  };
+
+  // AI/hledání našlo knihu, která už v knihovně je → přidáme další výtisk místo duplikátu.
+  const handleAddCopy = (book: Book) => {
+    const next = getCopies(book) + 1;
+    adjustCopies(book.id, 1);
+    recordScan(book.isbn, 'duplicate', book);
+    showToast('success', `Přidán výtisk: „${book.title}“ (teď ${copiesLabel(next)}).`, {
+      label: 'Zobrazit',
+      onClick: () => {
+        openBook({ ...book, copies: next });
         setNotification(null);
       },
     });
@@ -241,6 +256,7 @@ export function App() {
   };
   const [isLoading, setIsLoading] = useState(false);
   const [notification, setNotification] = useState<{
+    id: number;
     type: 'success' | 'warning' | 'error';
     message: string;
     action?: { label: string; onClick: () => void };
@@ -251,9 +267,11 @@ export function App() {
     message: string,
     action?: { label: string; onClick: () => void }
   ) => {
-    setNotification({ type, message, action });
+    // Každá hláška má vlastní číslo – starší časovač tak nezavře novější hlášku se stejným textem.
+    const id = Date.now() + Math.random();
+    setNotification({ id, type, message, action });
     setTimeout(() => {
-      setNotification((prev) => (prev?.message === message ? null : prev));
+      setNotification((prev) => (prev?.id === id ? null : prev));
     }, action ? 7000 : 3500);
   };
 
@@ -402,6 +420,18 @@ export function App() {
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-5xl w-full mx-auto p-4 sm:pt-6 space-y-4">
+        {/* Knihovnu se nepodařilo uložit (plná paměť prohlížeče) – trvalé varování */}
+        {saveFailed && (
+          <div role="alert" className="max-w-md mx-auto flex items-start gap-2 p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-xs text-rose-900 dark:text-rose-100">
+            <AlertCircle className="w-5 h-5 flex-shrink-0 text-rose-600 dark:text-rose-400" />
+            <p>
+              <strong>Poslední změny se nepodařilo uložit</strong> – paměť prohlížeče je plná (nejvíc místa zabírají
+              fotky obálek). Po zavření aplikace by se ztratily. Stáhněte si zálohu přes <em>Export CSV</em> v Knihovně
+              a smažte knihy, které nepotřebujete.
+            </p>
+          </div>
+        )}
+
         {/* Toast Notification */}
         {notification && (
           <div
@@ -574,6 +604,7 @@ export function App() {
                 onPick={handleCoverPick}
                 onManual={handleCoverManual}
                 onSelectBook={(book) => openBook(book)}
+                onAddCopy={handleAddCopy}
               />
 
               <ManualBookForm
@@ -652,6 +683,10 @@ export function App() {
           onSelectBook={(book) => {
             setAiPhoto(null);
             openBook(book);
+          }}
+          onAddCopy={(book) => {
+            setAiPhoto(null);
+            handleAddCopy(book);
           }}
         />
       )}

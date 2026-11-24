@@ -22,6 +22,7 @@ import {
   getCopies,
   getYear,
   normalizeAuthor,
+  normalizeMainTitle,
   normalizeText,
 } from '../utils/bookMatching';
 
@@ -102,9 +103,20 @@ export const BookList: React.FC<BookListProps> = ({
     setFilters((prev) => ({ ...prev, [key]: value }));
 
   // Počet vydání každé knihy (ona sama + jiná vydání v knihovně).
+  // Knihy nejdřív seskupíme podle hlavního názvu – porovnávat každou s každou
+  // by u velké knihovny (stovky knih) na telefonu znatelně zdržovalo.
   const editionCounts = useMemo(() => {
+    const groups = new Map<string, Book[]>();
+    for (const book of books) {
+      const key = normalizeMainTitle(book.title);
+      groups.set(key, [...(groups.get(key) ?? []), book]);
+    }
     const counts = new Map<string, number>();
-    for (const book of books) counts.set(book.id, findOtherEditions(book, books).length + 1);
+    for (const group of groups.values()) {
+      for (const book of group) {
+        counts.set(book.id, group.length > 1 ? findOtherEditions(book, group).length + 1 : 1);
+      }
+    }
     return counts;
   }, [books]);
 
@@ -208,7 +220,8 @@ export const BookList: React.FC<BookListProps> = ({
                 <button
                   type="button"
                   onClick={() => exportBooksToCsv(filteredBooks)}
-                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white dark:bg-indigo-600 dark:hover:bg-indigo-500 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-colors shadow-xs"
+                  disabled={filteredBooks.length === 0}
+                  className="disabled:opacity-50 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white dark:bg-indigo-600 dark:hover:bg-indigo-500 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-colors shadow-xs"
                   title="Exportovat zobrazené knihy do CSV (Excel)"
                 >
                   <Download className="w-4 h-4" />

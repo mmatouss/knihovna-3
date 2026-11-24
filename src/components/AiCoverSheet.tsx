@@ -12,6 +12,8 @@ interface AiCoverSheetProps {
   onPick: (candidate: BookCandidate, photoUrl?: string) => void;
   onManual: (title: string, photoUrl?: string) => void;
   onSelectBook: (book: Book) => void;
+  /** Nalezená kniha už v knihovně je → přidat výtisk. */
+  onAddCopy: (book: Book) => void;
   /** Zavřít a vrátit se ke kameře (třeba vyfotit znovu). */
   onClose: () => void;
 }
@@ -25,7 +27,7 @@ type State =
  * Okno, které vyjede zespodu po klepnutí na „Vyfotit obálku s AI“ ve skeneru:
  * AI pozná knihu a knihovník vybere tu správnou.
  */
-export const AiCoverSheet: React.FC<AiCoverSheetProps> = ({ photo, books, onPick, onManual, onSelectBook, onClose }) => {
+export const AiCoverSheet: React.FC<AiCoverSheetProps> = ({ photo, books, onPick, onManual, onSelectBook, onAddCopy, onClose }) => {
   // Komponenta se vytváří znovu pro každou fotku (viz App.tsx), proto stačí počáteční stav.
   const [state, setState] = useState<State>({ phase: 'working', status: 'AI si prohlíží obálku…' });
   const [preview] = useState(() => URL.createObjectURL(photo));
@@ -113,6 +115,7 @@ export const AiCoverSheet: React.FC<AiCoverSheetProps> = ({ photo, books, onPick
             candidates={state.candidates}
             books={books}
             onSelectBook={onSelectBook}
+            onAddCopy={onAddCopy}
             onPick={(c) => onPick(c, photoUrl)}
           />
         )}

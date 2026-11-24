@@ -1,5 +1,5 @@
 import type { Book } from '../types/book';
-import { normalizeIsbn } from './isbn';
+import { isbnKey } from './isbn';
 
 /**
  * Pomocné funkce pro správu knih: porovnávání názvů a autorů,
@@ -63,9 +63,10 @@ export function findOtherEditions(book: Book, books: Book[]): Book[] {
 
 /** Kniha se stejným ISBN (jiná než `exceptId`), pokud v knihovně je. */
 export function findBookByIsbn(isbn: string, books: Book[], exceptId?: string): Book | undefined {
-  const clean = normalizeIsbn(isbn);
-  if (!clean) return undefined;
-  return books.find((b) => b.id !== exceptId && normalizeIsbn(b.isbn) === clean);
+  // ISBN-10 a ISBN-13 téže knihy se berou jako stejné číslo.
+  const key = isbnKey(isbn);
+  if (!key) return undefined;
+  return books.find((b) => b.id !== exceptId && b.isbn !== '' && isbnKey(b.isbn) === key);
 }
 
 /** Rok vydání jako číslo (z „1986“, „2004-05-01“, „c1999“…), nebo null. */
@@ -100,6 +101,19 @@ const LANGUAGE_NAMES: Record<string, string> = {
   hu: 'maďarština',
   la: 'latina',
 };
+
+/**
+ * Kód jazyka z toho, co knihovník napsal do formuláře („čeština“ → „cs“).
+ * Neznámý název se uloží, jak je.
+ */
+export function languageCode(text: string): string | undefined {
+  const value = text.trim();
+  if (!value) return undefined;
+  const lower = value.toLowerCase();
+  if (LANGUAGE_NAMES[lower]) return lower; // už je to kód
+  const found = Object.entries(LANGUAGE_NAMES).find(([, name]) => name === lower);
+  return found ? found[0] : value;
+}
 
 /** Český název jazyka z kódu („cs“ → „čeština“); neznámý kód vrátí tak, jak je. */
 export function languageName(code?: string): string {

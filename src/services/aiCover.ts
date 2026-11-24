@@ -54,7 +54,7 @@ export function setGeminiKey(key: string): void {
 /** Zpráva při odmítnutém klíči – jiná pro společný a pro vlastní klíč. */
 const KEY_PROBLEM = () =>
   BUILT_IN_KEY
-    ? 'AI odmítla klíč aplikace (neplatný klíč nebo špatně nastavené omezení webu). Dejte vědět správci aplikace.'
+    ? 'AI odmítla klíč aplikace (klíč je neplatný nebo zablokovaný). Dejte vědět správci aplikace.'
     : 'Klíč k Gemini API není platný. Zkontrolujte ho v nastavení (ozubené kolečko).';
 
 /** Chyba se srozumitelnou českou zprávou pro knihovníka. */
