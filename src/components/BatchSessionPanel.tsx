@@ -22,12 +22,20 @@ const STATUS: Record<BatchItem['status'], { label: string; className: string }> 
   copy: { label: '+1 výtisk', className: 'bg-sky-100 text-sky-800 dark:bg-sky-900/50 dark:text-sky-200' },
   skipped: { label: 'Už v knihovně', className: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300' },
   notFound: { label: 'Bez údajů', className: 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200' },
+  moved: { label: 'Do regálu', className: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200' },
   error: { label: 'Chyba', className: 'bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-200' },
 };
 
+/** Text štítku – u přesunu do regálu i s jeho názvem. */
+function statusLabel(item: BatchItem): string {
+  if (item.undone) return 'Vráceno';
+  if (item.status === 'moved' && item.shelfName) return `→ ${item.shelfName}`;
+  return STATUS[item.status].label;
+}
+
 /** Lze akci vrátit zpět? */
 function canUndo(item: BatchItem): boolean {
-  return !item.undone && (item.status === 'added' || item.status === 'copy' || item.status === 'notFound');
+  return !item.undone && (item.status === 'added' || item.status === 'copy' || item.status === 'notFound' || item.status === 'moved');
 }
 
 export const BatchSessionPanel: React.FC<BatchSessionPanelProps> = ({
@@ -45,6 +53,7 @@ export const BatchSessionPanel: React.FC<BatchSessionPanelProps> = ({
   const added = count('added') + count('notFound');
   const copies = count('copy');
   const notFound = count('notFound');
+  const moved = count('moved');
   const pending = count('pending');
   const lastUndoable = items.find(canUndo);
 
@@ -66,6 +75,7 @@ export const BatchSessionPanel: React.FC<BatchSessionPanelProps> = ({
             {added} {added === 1 ? 'nová kniha' : added >= 2 && added <= 4 ? 'nové knihy' : 'nových knih'}
             {' · '}
             {copies} {copies === 1 ? 'výtisk navíc' : 'výtisků navíc'}
+            {moved > 0 && <span className="text-emerald-700 dark:text-emerald-300"> · {moved} zařazeno do regálu</span>}
             {notFound > 0 && <span className="text-amber-700 dark:text-amber-300"> · {notFound} bez údajů</span>}
             {pending > 0 && <span className="text-slate-500"> · {pending} se hledá</span>}
           </p>
@@ -158,7 +168,7 @@ export const BatchSessionPanel: React.FC<BatchSessionPanelProps> = ({
                   <div className="flex items-center gap-1.5 mt-0.5">
                     <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold inline-flex items-center ${status.className}`}>
                       {item.status === 'pending' && <Loader2 className="w-3 h-3 mr-0.5 animate-spin" />}
-                      {item.undone ? 'Vráceno' : status.label}
+                      {statusLabel(item)}
                     </span>
                     <span className="text-[10px] text-slate-400">{time}</span>
                   </div>
@@ -226,7 +236,7 @@ export const BatchLiveBar: React.FC<BatchLiveBarProps> = ({ items, onUndo }) => 
             {status && (
               <span className={`mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold inline-flex items-center ${status.className}`}>
                 {last.status === 'pending' && <Loader2 className="w-3 h-3 mr-0.5 animate-spin" />}
-                {last.undone ? 'Vráceno' : status.label}
+                {statusLabel(last)}
               </span>
             )}
           </div>

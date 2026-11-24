@@ -14,6 +14,9 @@ import {
   SlidersHorizontal,
   X,
   ChevronRight,
+  CheckCircle2,
+  Circle,
+  ListChecks,
 } from 'lucide-react';
 import { BookCover } from './BookCover';
 import { formatIsbn } from '../utils/isbn';
@@ -78,6 +81,14 @@ interface BookListProps {
   /** Vybraný regál, když ho řídí rodič (např. klepnutí na regál v záložce Regály). */
   shelfFilter?: string;
   onShelfFilterChange?: (key: string) => void;
+  /** Hromadné přesunutí vybraných knih do regálu (undefined = bez regálu). */
+  onMoveBooks?: (ids: string[], shelfId: string | undefined, created?: Shelf) => void;
+  /** Vytvoří nový regál (volba „+ Nový regál…“ při hromadném přesunu). */
+  onCreateShelf?: (name: string) => Shelf | null;
+  /** Výběr knih pro konkrétní regál (z karty v záložce Regály). */
+  pickForShelf?: Shelf | null;
+  /** Výběr pro regál skončil (přidáno nebo zrušeno). */
+  onPickDone?: () => void;
 }
 
 export const BookList: React.FC<BookListProps> = ({
@@ -89,7 +100,32 @@ export const BookList: React.FC<BookListProps> = ({
   onManageShelves,
   shelfFilter: shelfFilterProp,
   onShelfFilterChange,
+  onMoveBooks,
+  onCreateShelf,
+  pickForShelf,
+  onPickDone,
 }) => {
+  // Hromadný výběr knih (tlačítko „Vybrat“, nebo výběr pro regál ze záložky Regály).
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const selecting = selectMode || Boolean(pickForShelf);
+  const toggleSelected = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const finishSelecting = () => {
+    setSelected(new Set());
+    setSelectMode(false);
+    if (pickForShelf) onPickDone?.();
+  };
+  const moveSelected = (shelfId: string | undefined, created?: Shelf) => {
+    if (selected.size === 0 || !onMoveBooks) return;
+    onMoveBooks([...selected], shelfId, created);
+    finishSelecting();
+  };
   const [searchQuery, setSearchQuery] = useState('');
   // Vybraný regál: 'all' = všechny knihy, 'none' = bez regálu, jinak id regálu.
   const [shelfFilterState, setShelfFilterState] = useState<string>('all');
@@ -233,11 +269,28 @@ export const BookList: React.FC<BookListProps> = ({
       return 0;
     });
 
+  // Při výběru knih pro regál nenabízíme knihy, které už v něm jsou.
+  const visibleBooks = pickForShelf ? filteredBooks.filter((b) => b.shelfId !== pickForShelf.id) : filteredBooks;
+  const allVisibleSelected = visibleBooks.length > 0 && visibleBooks.every((b) => selected.has(b.id));
+
   const isFiltering = activeFilterCount > 0 || searchQuery.trim() !== '' || activeShelf !== 'all';
   const totalCopies = books.reduce((sum, b) => sum + getCopies(b), 0);
 
   return (
-    <div className="w-full mx-auto space-y-4">
+    <div className={`w-full mx-auto space-y-4 ${selecting ? 'pb-28' : ''}`}>
+      {/* Výběr knih pro regál (ze záložky Regály) */}
+      {pickForShelf && (
+        <div className="flex items-center gap-3 p-3 rounded-2xl border-2 text-sm" style={{ borderColor: pickForShelf.color, backgroundColor: `${pickForShelf.color}14` }}>
+          <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: pickForShelf.color }} aria-hidden="true" />
+          <p className="flex-1 min-w-0 text-slate-800 dark:text-slate-100">
+            Klepnutím vyberte knihy, které patří do regálu <strong>„{pickForShelf.name}“</strong>.
+          </p>
+          <button type="button" onClick={finishSelecting} className="px-3 py-2 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-white/60 dark:hover:bg-slate-800">
+            Zrušit
+          </button>
+        </div>
+      )}
+
       {/* Top Header & Toolbar */}
       <div className="bg-white/90 dark:bg-slate-800/90 backdrop-blur rounded-2xl p-4 sm:p-5 border border-slate-200/80 dark:border-slate-700 shadow-[0_1px_2px_rgba(60,40,20,0.05)] space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -337,6 +390,23 @@ export const BookList: React.FC<BookListProps> = ({
                   </span>
                 )}
               </button>
+
+              {onMoveBooks && !pickForShelf && (
+                <button
+                  type="button"
+                  onClick={() => (selectMode ? finishSelecting() : setSelectMode(true))}
+                  aria-pressed={selectMode}
+                  className={`px-3 py-2.5 rounded-xl border text-xs font-medium flex items-center gap-1 transition-colors ${
+                    selectMode
+                      ? 'bg-indigo-600 border-indigo-600 text-white'
+                      : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
+                  }`}
+                  title="Vybrat víc knih a přesunout je do regálu"
+                >
+                  <ListChecks className="w-3.5 h-3.5" />
+                  <span>{selectMode ? 'Hotovo' : 'Vybrat'}</span>
+                </button>
+              )}
 
               <div className="flex items-center bg-slate-100 dark:bg-slate-900 rounded-xl p-1 border border-slate-200 dark:border-slate-700">
                 <button
@@ -560,8 +630,14 @@ export const BookList: React.FC<BookListProps> = ({
         </div>
       )}
 
+      {pickForShelf && filteredBooks.length > 0 && visibleBooks.length === 0 && (
+        <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 text-center text-slate-500 dark:text-slate-400 text-xs border border-slate-200 dark:border-slate-700">
+          Všechny zobrazené knihy už v tomto regálu jsou.
+        </div>
+      )}
+
       {/* Book Cards Display */}
-      {filteredBooks.length > 0 && (
+      {visibleBooks.length > 0 && (
         <div
           className={
             viewMode === 'list'
@@ -569,7 +645,10 @@ export const BookList: React.FC<BookListProps> = ({
               : 'grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-x-3 gap-y-5'
           }
         >
-          {filteredBooks.map((book) => {
+          {visibleBooks.map((book) => {
+            const isSelected = selected.has(book.id);
+            // Ve výběru klepnutí knihu označí, jinak otevře detail.
+            const handleClick = () => (selecting ? toggleSelected(book.id) : onSelectBook(book));
             const copies = getCopies(book);
             const editions = editionCounts.get(book.id) ?? 1;
             const meta = [book.publishedDate, book.publisher].filter(Boolean).join(' · ');
@@ -605,8 +684,13 @@ export const BookList: React.FC<BookListProps> = ({
               <button
                 type="button"
                 key={book.id}
-                onClick={() => onSelectBook(book)}
-                className="group text-left bg-white/90 dark:bg-slate-800/90 rounded-2xl border border-slate-200/80 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-700 shadow-[0_1px_2px_rgba(60,40,20,0.05)] hover:shadow-md hover:-translate-y-px transition-all p-3 flex items-center gap-3.5"
+                onClick={handleClick}
+                aria-pressed={selecting ? isSelected : undefined}
+                className={`group text-left bg-white/90 dark:bg-slate-800/90 rounded-2xl border shadow-[0_1px_2px_rgba(60,40,20,0.05)] hover:shadow-md hover:-translate-y-px transition-all p-3 flex items-center gap-3.5 ${
+                  isSelected
+                    ? 'border-indigo-500 ring-2 ring-indigo-500/40'
+                    : 'border-slate-200/80 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-700'
+                }`}
               >
                 <BookCover
                   title={book.title}
@@ -632,22 +716,44 @@ export const BookList: React.FC<BookListProps> = ({
                     )}
                   </div>
                 </div>
-                <ChevronRight className="w-4 h-4 text-slate-300 dark:text-slate-600 group-hover:text-indigo-500 flex-shrink-0 transition-colors" />
+                {selecting ? (
+                  isSelected ? (
+                    <CheckCircle2 className="w-6 h-6 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />
+                  ) : (
+                    <Circle className="w-6 h-6 text-slate-300 dark:text-slate-600 flex-shrink-0" />
+                  )
+                ) : (
+                  <ChevronRight className="w-4 h-4 text-slate-300 dark:text-slate-600 group-hover:text-indigo-500 flex-shrink-0 transition-colors" />
+                )}
               </button>
             ) : (
               <button
                 type="button"
                 key={book.id}
-                onClick={() => onSelectBook(book)}
+                onClick={handleClick}
+                aria-pressed={selecting ? isSelected : undefined}
                 className="group text-left flex flex-col"
               >
-                <BookCover
-                  title={book.title}
-                  authors={book.authors}
-                  coverUrl={book.coverUrl}
-                  isbn={book.isbn}
-                  className="w-full aspect-[2/3] transition-transform group-hover:-translate-y-1 group-hover:rotate-[-0.6deg]"
-                />
+                <span className="relative block">
+                  <BookCover
+                    title={book.title}
+                    authors={book.authors}
+                    coverUrl={book.coverUrl}
+                    isbn={book.isbn}
+                    className={`w-full aspect-[2/3] transition-transform group-hover:-translate-y-1 group-hover:rotate-[-0.6deg] ${
+                      isSelected ? 'ring-4 ring-indigo-500' : ''
+                    }`}
+                  />
+                  {selecting && (
+                    <span className="absolute top-1.5 right-1.5 rounded-full bg-white dark:bg-slate-900 shadow">
+                      {isSelected ? (
+                        <CheckCircle2 className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
+                      ) : (
+                        <Circle className="w-6 h-6 text-slate-400" />
+                      )}
+                    </span>
+                  )}
+                </span>
                 <h4 className="mt-2 text-xs sm:text-sm font-semibold text-slate-900 dark:text-white leading-snug line-clamp-2 [overflow-wrap:anywhere]">
                   {book.title}
                 </h4>
@@ -656,6 +762,70 @@ export const BookList: React.FC<BookListProps> = ({
               </button>
             );
           })}
+        </div>
+      )}
+
+      {/* Lišta hromadného výběru – nad spodní navigací */}
+      {selecting && (
+        <div className="fixed left-0 right-0 z-[41] bottom-[calc(4.25rem+env(safe-area-inset-bottom))] sm:bottom-4 px-3 anim-sheet">
+          <div className="max-w-xl mx-auto p-2.5 rounded-2xl bg-slate-900 text-white shadow-2xl space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="pl-1.5 text-sm font-semibold whitespace-nowrap" aria-live="polite">
+                {selected.size} {selected.size === 1 ? 'vybraná' : selected.size >= 2 && selected.size <= 4 ? 'vybrané' : 'vybraných'}
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelected(allVisibleSelected ? new Set() : new Set(visibleBooks.map((b) => b.id)))}
+                className="px-2.5 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-white/10 whitespace-nowrap"
+              >
+                {allVisibleSelected ? 'Zrušit výběr' : 'Vybrat vše'}
+              </button>
+              <span className="flex-1" />
+              <button
+                type="button"
+                onClick={finishSelecting}
+                className="p-2.5 -my-1 rounded-lg text-slate-300 hover:text-white hover:bg-white/10"
+                aria-label="Ukončit výběr"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            {pickForShelf ? (
+              <button
+                type="button"
+                disabled={selected.size === 0}
+                onClick={() => moveSelected(pickForShelf.id)}
+                className="w-full px-3.5 py-3 rounded-xl bg-white text-slate-900 text-sm font-semibold disabled:opacity-40 truncate"
+              >
+                Přidat do „{pickForShelf.name}“
+              </button>
+            ) : (
+              <select
+                value=""
+                disabled={selected.size === 0}
+                aria-label="Přesunout vybrané knihy do regálu"
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === '__none__') moveSelected(undefined);
+                  else if (v === '__new__') {
+                    const name = window.prompt('Název nového regálu:');
+                    const created = name && onCreateShelf ? onCreateShelf(name) : null;
+                    if (created) moveSelected(created.id, created);
+                  } else if (v) moveSelected(v);
+                }}
+                className="w-full px-3.5 py-3 rounded-xl bg-white text-slate-900 text-sm font-semibold disabled:opacity-40 cursor-pointer"
+              >
+                <option value="">{selected.size === 0 ? 'Klepnutím vyberte knihy…' : 'Přesunout do regálu…'}</option>
+                {shelves.map((sh) => (
+                  <option key={sh.id} value={sh.id}>
+                    {sh.name}
+                  </option>
+                ))}
+                <option value="__none__">Bez regálu</option>
+                {onCreateShelf && <option value="__new__">+ Nový regál…</option>}
+              </select>
+            )}
+          </div>
         </div>
       )}
     </div>
