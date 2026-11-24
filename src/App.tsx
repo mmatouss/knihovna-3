@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import type { BatchItem, Book, ScanMode } from './types/book';
+import type { BatchItem, Book, ScanMode, Shelf } from './types/book';
 import { useBookStorage } from './hooks/useBookStorage';
 import { useShelves } from './hooks/useShelves';
 import { ShelfManager } from './components/ShelfManager';
@@ -37,6 +37,7 @@ export function App() {
     insertBook,
     adjustCopies,
     setBookShelf,
+    moveBooksToShelf,
     removeShelfFromBooks,
   } = useBookStorage();
 
@@ -47,6 +48,30 @@ export function App() {
   const [showShelfManager, setShowShelfManager] = useState(false);
   // Regál vybraný v knihovně ('all' = vše) – nastaví ho i klepnutí na regál v záložce Regály.
   const [libraryShelf, setLibraryShelf] = useState('all');
+  // Výběr knih pro regál (tlačítko „+ Přidat knihy“ v záložce Regály).
+  const [pickForShelfId, setPickForShelfId] = useState<string | null>(null);
+  /** Přepnutí záložky (zruší rozpracovaný výběr knih pro regál). */
+  const switchTab = (tab: ScanMode) => {
+    setPickForShelfId(null);
+    setActiveTab(tab);
+  };
+  const pickForShelf = shelves.find((s) => s.id === pickForShelfId) ?? null;
+
+  /** Hromadné přesunutí knih do regálu (s možností vrátit). */
+  const handleMoveBooks = (ids: string[], shelfId: string | undefined, created?: Shelf) => {
+    const previous = new Map(books.filter((b) => ids.includes(b.id)).map((b) => [b.id, b.shelfId]));
+    moveBooksToShelf(ids, shelfId);
+    const shelf = created ?? shelves.find((s) => s.id === shelfId);
+    const n = ids.length;
+    const what = `${n} ${n === 1 ? 'kniha' : n >= 2 && n <= 4 ? 'knihy' : 'knih'}`;
+    showToast('success', shelf ? `${what} → regál „${shelf.name}“.` : `${what} → bez regálu.`, {
+      label: 'Vrátit',
+      onClick: () => {
+        for (const [id, prev] of previous) setBookShelf(id, prev);
+        setNotification(null);
+      },
+    });
+  };
   // Regál, do kterého se ukládají nově naskenované/zapsané knihy ('' = nezařazovat).
   // Hodí se při katalogizaci police po polici. Pamatuje se v tomto zařízení.
   const [scanShelfIdRaw, setScanShelfId] = useState(() => {
@@ -240,7 +265,18 @@ export function App() {
     });
 
     // Kniha už v knihovně je → další výtisk, nebo přeskočit (podle nastavení).
+    // Když je ve skeneru vybraný regál a kniha v něm ještě není, přesuneme ji tam
+    // (uspořádání už zkatalogizované knihovny police po polici).
     const handleExisting = (book: Book) => {
+      const target = scanShelf;
+      if (target && book.shelfId !== target.id) {
+        setBookShelf(book.id, target.id);
+        booksRef.current = booksRef.current.map((b) => (b.id === book.id ? { ...b, shelfId: target.id } : b));
+        recordScan(book.isbn, 'duplicate', book);
+        updateBatchItem(itemId, { status: 'moved', ...bookInfo(book), prevShelfId: book.shelfId, shelfName: target.name });
+        playFeedback('added', soundOn);
+        return;
+      }
       if (duplicateMode === 'copy') {
         adjustCopies(book.id, 1);
         recordScan(book.isbn, 'duplicate', book);
@@ -301,6 +337,12 @@ export function App() {
     if (!item || item.undone || !item.bookId) return;
     if (item.status === 'copy') {
       adjustCopies(item.bookId, -1);
+      updateBatchItem(itemId, { undone: true });
+    } else if (item.status === 'moved') {
+      // Vrátit knihu do regálu, kde stála předtím.
+      const bookId = item.bookId;
+      setBookShelf(bookId, item.prevShelfId);
+      booksRef.current = booksRef.current.map((b) => (b.id === bookId ? { ...b, shelfId: item.prevShelfId } : b));
       updateBatchItem(itemId, { undone: true });
     } else if (item.status === 'added' || item.status === 'notFound') {
       const bookId = item.bookId;
@@ -390,6 +432,20 @@ export function App() {
         // Duplikát: knihu se stejným ISBN už máme – nabídneme přidání dalšího výtisku
         // (a zbytečně ji nehledáme v online databázích).
         const existing = findBookByIsbn(isbn, books);
+        // Ve skeneru je vybraný regál a kniha v něm není → jen ji tam přesuneme.
+        if (existing && scanShelf && existing.shelfId !== scanShelf.id) {
+          const previous = existing.shelfId;
+          setBookShelf(existing.id, scanShelf.id);
+          recordScan(existing.isbn, 'duplicate', existing);
+          showToast('success', `„${existing.title}“ zařazena do regálu „${scanShelf.name}“.`, {
+            label: 'Vrátit',
+            onClick: () => {
+              setBookShelf(existing.id, previous);
+              setNotification(null);
+            },
+          });
+          return;
+        }
         if (existing) {
           recordScan(existing.isbn, 'duplicate', existing);
           showToast('warning', `„${existing.title}“ už v knihovně je (${copiesLabel(getCopies(existing))}).`);
@@ -446,7 +502,7 @@ export function App() {
         setIsLoading(false);
       }
     },
-    [addBook, books, recordScan, isLoading, scanShelfId]
+    [addBook, books, recordScan, isLoading, scanShelfId, scanShelf, setBookShelf]
   );
 
   return (
@@ -469,7 +525,7 @@ export function App() {
 
           <div className="flex items-center space-x-2">
             <button
-              onClick={() => setActiveTab('list')}
+              onClick={() => switchTab('list')}
               className="relative pl-2.5 pr-3 py-1.5 bg-white/80 hover:bg-white dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-full text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors flex items-center gap-1.5 shadow-[0_1px_2px_rgba(60,40,20,0.06)]"
             >
               <Library className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
@@ -527,7 +583,7 @@ export function App() {
         {/* Desktop Tab Selector */}
         <div className="hidden sm:flex bg-slate-200/50 dark:bg-slate-800/80 p-1 rounded-full max-w-xl mx-auto border border-slate-200/70 dark:border-slate-700">
           <button
-            onClick={() => setActiveTab('camera')}
+            onClick={() => switchTab('camera')}
             className={`flex-1 py-2 rounded-full text-xs font-semibold flex items-center justify-center space-x-2 transition-all ${
               activeTab === 'camera'
                 ? 'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-sm'
@@ -538,7 +594,7 @@ export function App() {
             <span>Skener kamery</span>
           </button>
           <button
-            onClick={() => setActiveTab('manual')}
+            onClick={() => switchTab('manual')}
             className={`flex-1 py-2 rounded-full text-xs font-semibold flex items-center justify-center space-x-2 transition-all ${
               activeTab === 'manual'
                 ? 'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-sm'
@@ -549,7 +605,7 @@ export function App() {
             <span>Ruční zadání</span>
           </button>
           <button
-            onClick={() => setActiveTab('shelves')}
+            onClick={() => switchTab('shelves')}
             className={`flex-1 py-2 rounded-full text-xs font-semibold flex items-center justify-center space-x-2 transition-all ${
               activeTab === 'shelves'
                 ? 'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-sm'
@@ -560,7 +616,7 @@ export function App() {
             <span>Regály</span>
           </button>
           <button
-            onClick={() => setActiveTab('list')}
+            onClick={() => switchTab('list')}
             className={`flex-1 py-2 rounded-full text-xs font-semibold flex items-center justify-center space-x-2 transition-all ${
               activeTab === 'list'
                 ? 'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-sm'
@@ -677,7 +733,7 @@ export function App() {
                   books={books}
                   onSelectBook={(book) => openBook(book)}
                   onClearHistory={clearScanHistory}
-                  onViewAll={() => setActiveTab('list')}
+                  onViewAll={() => switchTab('list')}
                 />
               )}
             </div>
@@ -714,7 +770,7 @@ export function App() {
                 books={books}
                 onSelectBook={(book) => openBook(book)}
                 onClearHistory={clearScanHistory}
-                onViewAll={() => setActiveTab('list')}
+                onViewAll={() => switchTab('list')}
               />
             </div>
           )}
@@ -726,7 +782,15 @@ export function App() {
               onManage={() => setShowShelfManager(true)}
               onAdd={addShelf}
               onOpenShelf={(key) => {
+                setPickForShelfId(null);
                 setLibraryShelf(key);
+                setActiveTab('list');
+                window.scrollTo(0, 0);
+              }}
+              onAddBooks={(shelf) => {
+                // Knihovna ve výběru: knihovník klepne na knihy, které do regálu patří.
+                setPickForShelfId(shelf.id);
+                setLibraryShelf('all');
                 setActiveTab('list');
                 window.scrollTo(0, 0);
               }}
@@ -740,6 +804,14 @@ export function App() {
               onManageShelves={() => setShowShelfManager(true)}
               shelfFilter={libraryShelf}
               onShelfFilterChange={setLibraryShelf}
+              onMoveBooks={handleMoveBooks}
+              onCreateShelf={addShelf}
+              pickForShelf={pickForShelf}
+              onPickDone={() => {
+                // Po přidání ukážeme obsah regálu, do kterého se knihy přidávaly.
+                if (pickForShelf) setLibraryShelf(pickForShelf.id);
+                setPickForShelfId(null);
+              }}
               onSelectBook={(book) => openBook(book)}
               onClearAll={clearAllBooks}
               onNavigateToScan={() => setActiveTab('camera')}
@@ -761,7 +833,7 @@ export function App() {
             return (
               <button
                 key={tab}
-                onClick={() => setActiveTab(tab)}
+                onClick={() => switchTab(tab)}
                 aria-current={active ? 'page' : undefined}
                 className={`flex-1 min-w-0 flex flex-col items-center gap-0.5 px-1 transition-colors ${
                   active ? 'text-indigo-700 dark:text-indigo-300' : 'text-slate-500 dark:text-slate-400'

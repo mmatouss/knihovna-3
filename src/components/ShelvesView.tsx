@@ -13,6 +13,8 @@ interface ShelvesViewProps {
   /** Otevře správu regálů (přidat, přejmenovat, barva, smazat). */
   onManage: () => void;
   onAdd: (name: string) => Shelf | null;
+  /** Otevře výběr knih, které se mají přidat do regálu. */
+  onAddBooks: (shelf: Shelf) => void;
 }
 
 function booksLabel(n: number) {
@@ -25,15 +27,14 @@ const ShelfCard: React.FC<{
   color: string;
   books: Book[];
   onClick: () => void;
+  /** Tlačítko „+ Přidat knihy“ (u „Bez regálu“ chybí). */
+  onAddBooks?: () => void;
   muted?: boolean;
-}> = ({ name, color, books, onClick, muted }) => {
+}> = ({ name, color, books, onClick, onAddBooks, muted }) => {
   const copies = books.reduce((sum, b) => sum + getCopies(b), 0);
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="group text-left bg-white/90 dark:bg-slate-800/90 rounded-2xl border border-slate-200/80 dark:border-slate-700 shadow-[0_1px_2px_rgba(60,40,20,0.05)] hover:shadow-md hover:-translate-y-px transition-all overflow-hidden"
-    >
+    <div className="bg-white/90 dark:bg-slate-800/90 rounded-2xl border border-slate-200/80 dark:border-slate-700 shadow-[0_1px_2px_rgba(60,40,20,0.05)] hover:shadow-md transition-all overflow-hidden flex flex-col">
+    <button type="button" onClick={onClick} className="group text-left flex-1" aria-label={`Otevřít regál ${name}`}>
       {/* Police s knihami */}
       <div className="relative h-24 px-3 pt-3 flex items-end gap-1 overflow-hidden" style={{ backgroundColor: `${color}1f` }}>
         {books.length === 0 ? (
@@ -65,6 +66,17 @@ const ShelfCard: React.FC<{
         <ChevronRight className="w-4 h-4 text-slate-300 dark:text-slate-600 group-hover:text-indigo-500 flex-shrink-0" />
       </div>
     </button>
+    {onAddBooks && (
+      <button
+        type="button"
+        onClick={onAddBooks}
+        className="mx-3 mb-3 py-2 rounded-xl border border-dashed border-slate-300 dark:border-slate-600 text-xs font-semibold text-indigo-700 dark:text-indigo-300 hover:border-indigo-400 flex items-center justify-center gap-1"
+      >
+        <Plus className="w-3.5 h-3.5" />
+        Přidat knihy
+      </button>
+    )}
+    </div>
   );
 };
 
@@ -72,7 +84,7 @@ const ShelfCard: React.FC<{
  * Záložka „Regály“: přehled regálů jako police s knihami. Klepnutím se
  * otevře knihovna jen s knihami z daného regálu.
  */
-export const ShelvesView: React.FC<ShelvesViewProps> = ({ shelves, books, onOpenShelf, onManage, onAdd }) => {
+export const ShelvesView: React.FC<ShelvesViewProps> = ({ shelves, books, onOpenShelf, onManage, onAdd, onAddBooks }) => {
   const byShelf = new Map<string, Book[]>();
   const known = new Set(shelves.map((s) => s.id));
   for (const b of books) {
@@ -146,7 +158,14 @@ export const ShelvesView: React.FC<ShelvesViewProps> = ({ shelves, books, onOpen
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           {shelves.map((s) => (
-            <ShelfCard key={s.id} name={s.name} color={s.color} books={byShelf.get(s.id) ?? []} onClick={() => onOpenShelf(s.id)} />
+            <ShelfCard
+              key={s.id}
+              name={s.name}
+              color={s.color}
+              books={byShelf.get(s.id) ?? []}
+              onClick={() => onOpenShelf(s.id)}
+              onAddBooks={books.length > 0 ? () => onAddBooks(s) : undefined}
+            />
           ))}
           {unshelved.length > 0 && (
             <ShelfCard name="Bez regálu" color="#9ca3af" books={unshelved} onClick={() => onOpenShelf('none')} muted />

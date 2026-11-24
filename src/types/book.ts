@@ -57,9 +57,10 @@ export interface BatchItem {
    * copy     = kniha už v knihovně byla → přidán další výtisk
    * skipped  = kniha už v knihovně byla → přeskočeno
    * notFound = uloženo, ale údaje se nenašly (doplnit ručně)
+   * moved    = kniha už v knihovně byla → přesunuta do regálu vybraného ve skeneru
    * error    = chyba
    */
-  status: 'pending' | 'added' | 'copy' | 'skipped' | 'notFound' | 'error';
+  status: 'pending' | 'added' | 'copy' | 'skipped' | 'notFound' | 'moved' | 'error';
   bookId?: string;
   title?: string;
   authors?: string[];
@@ -67,4 +68,8 @@ export interface BatchItem {
   scannedAt: number;
   /** Akce byla vrácena zpět. */
   undone?: boolean;
+  /** U přesunu do regálu: kde kniha stála předtím (kvůli vrácení zpět). */
+  prevShelfId?: string;
+  /** Název regálu, do kterého se kniha přesunula. */
+  shelfName?: string;
 }

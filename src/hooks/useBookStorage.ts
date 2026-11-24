@@ -130,6 +130,12 @@ export function useBookStorage() {
     setBooks((prev) => prev.map((b) => (b.id === id ? { ...b, shelfId } : b)));
   };
 
+  /** Přesune víc knih najednou do regálu (undefined = bez regálu). */
+  const moveBooksToShelf = (ids: string[], shelfId: string | undefined) => {
+    const set = new Set(ids);
+    setBooks((prev) => prev.map((b) => (set.has(b.id) ? { ...b, shelfId } : b)));
+  };
+
   /** Regál byl smazán – jeho knihy zůstanou v knihovně, jen bez regálu. */
   const removeShelfFromBooks = (shelfId: string) => {
     setBooks((prev) => prev.map((b) => (b.shelfId === shelfId ? { ...b, shelfId: undefined } : b)));
@@ -161,6 +167,7 @@ export function useBookStorage() {
     insertBook,
     adjustCopies,
     setBookShelf,
+    moveBooksToShelf,
     removeShelfFromBooks,
     clearAllBooks,
     recordScan,
